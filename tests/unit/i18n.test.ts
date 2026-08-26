@@ -105,7 +105,7 @@ describe("i18n parity — locales EN/ZH/DE", () => {
     if (missingInZhFromDe.length) parts.push(`Missing in ZH (present in DE): ${missingInZhFromDe.join(", ")}`);
 
     // Print union size for debugging
-    // eslint-disable-next-line no-console
+     
     if (parts.length) console.error(parts.join("\n"));
 
     expect(parts, parts.join("\n")).toEqual([]);
