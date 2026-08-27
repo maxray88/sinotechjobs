@@ -248,6 +248,15 @@ export const translations = {
       subtitle: "Your bookmarked positions",
       viewTracker: "View Tracker",
     },
+    savedFilters: {
+      title: "Saved Filters",
+      saveFilter: "Save Filter",
+      namePlaceholder: "Filter name",
+      empty: "No saved filters yet.",
+    },
+    digest: {
+      subject: "Your weekly job digest \u2014 {count} new matches",
+    },
     footer: {
       rights: "All rights reserved.",
       mission: "Connecting Chinese-speaking tech talent with DACH employers.",
@@ -504,6 +513,15 @@ export const translations = {
       subtitle: "你收藏的职位",
       viewTracker: "查看追踪",
     },
+    savedFilters: {
+      title: "已保存筛选",
+      saveFilter: "保存筛选",
+      namePlaceholder: "例如：柏林的 AI 职位",
+      empty: "暂无已保存的筛选。",
+    },
+    digest: {
+      subject: "您的每周职位简报 — {count} 个新匹配",
+    },
     footer: {
       rights: "保留所有权利。",
       mission: "连接中文科技人才与德语区雇主。",
@@ -759,6 +777,15 @@ export const translations = {
       title: "Gespeicherte Jobs",
       subtitle: "Deine gemerkten Positionen",
       viewTracker: "Tracker ansehen",
+    },
+    savedFilters: {
+      title: "Gespeicherte Filter",
+      saveFilter: "Filter speichern",
+      namePlaceholder: "z.B. KI-Jobs in Berlin",
+      empty: "Noch keine gespeicherten Filter.",
+    },
+    digest: {
+      subject: "Ihr w\u00f6chentlicher Job-Digest \u2014 {count} neue Treffer",
     },
     footer: {
       rights: "Alle Rechte vorbehalten.",

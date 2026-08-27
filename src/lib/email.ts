@@ -1,15 +1,24 @@
 import "server-only";
 
 import { Resend } from "resend";
+import type { Job } from "@/lib/types";
 
 export type EmailLocale = "en" | "zh" | "de";
-export type EmailTemplate = "posting_submitted" | "posting_approved" | "posting_rejected";
+export type EmailTemplate = "posting_submitted" | "posting_approved" | "posting_rejected" | "weekly_digest";
 
 export async function sendEmail(opts: {
   to: string;
   locale: EmailLocale;
   template: EmailTemplate;
-  data: { jobTitle?: string; company?: string; reason?: string; jobId?: string };
+  data: {
+    jobTitle?: string;
+    company?: string;
+    reason?: string;
+    jobId?: string;
+    jobs?: Job[];
+    count?: number;
+    filterNames?: string[];
+  };
 }): Promise<void> {
   if (!process.env.RESEND_API_KEY) {
     console.warn("[email] RESEND_API_KEY missing, skipping");
@@ -63,6 +72,42 @@ export async function sendEmail(opts: {
     } else {
       subject = `Your posting is live: ${jobTitle}`;
       html = `<p>Hi,</p><p>Great news! Your posting <strong>${safeTitle}</strong> at <strong>${safeCompany}</strong> is now live.</p><p><a href="${jobLink}">View your job posting</a></p><p>— SinotechJobs Team</p>`;
+    }
+  } else if (opts.template === "weekly_digest") {
+    const jobs = opts.data.jobs ?? [];
+    const count = opts.data.count ?? jobs.length;
+    const filterNames = opts.data.filterNames ?? [];
+    const countStr = String(count);
+
+    if (opts.locale === "zh") {
+      subject = `您的每周职位简报 — ${countStr} 个新匹配`;
+    } else if (opts.locale === "de") {
+      subject = `Ihr wöchentlicher Job-Digest — ${countStr} neue Treffer`;
+    } else {
+      subject = `Your weekly job digest — ${countStr} new matches`;
+    }
+
+    const listItems = jobs
+      .map((j) => {
+        const title = esc(j.title);
+        const comp = esc(j.company);
+        const loc = esc(j.location);
+        const url = `https://sinotechjobs.vercel.app/jobs/${esc(j.id)}`;
+        return `<li style="margin-bottom:8px;"><a href="${url}" style="color:#2563eb;text-decoration:none;"><strong>${title}</strong></a> — ${comp} · ${loc}</li>`;
+      })
+      .join("");
+
+    const filtersLine =
+      filterNames.length > 0
+        ? `<p style="color:#64748b;font-size:13px;">Filters: ${filterNames.map((n) => esc(n)).join(", ")}</p>`
+        : "";
+
+    if (opts.locale === "zh") {
+      html = `<p>您好，</p><p>过去一周有 <strong>${esc(countStr)}</strong> 个新职位匹配您的筛选：</p><ul>${listItems}</ul>${filtersLine}<p><a href="https://sinotechjobs.vercel.app/jobs">查看全部职位</a></p><p>— SinotechJobs 团队</p>`;
+    } else if (opts.locale === "de") {
+      html = `<p>Hallo,</p><p>In der letzten Woche gab es <strong>${esc(countStr)}</strong> neue Treffer für Ihre Filter:</p><ul>${listItems}</ul>${filtersLine}<p><a href="https://sinotechjobs.vercel.app/jobs">Alle Jobs ansehen</a></p><p>— Ihr SinotechJobs Team</p>`;
+    } else {
+      html = `<p>Hi,</p><p>There are <strong>${esc(countStr)}</strong> new jobs matching your saved filters in the past week:</p><ul>${listItems}</ul>${filtersLine}<p><a href="https://sinotechjobs.vercel.app/jobs">View all jobs</a></p><p>— SinotechJobs Team</p>`;
     }
   } else {
     // posting_rejected
