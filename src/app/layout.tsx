@@ -30,8 +30,23 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const plausibleDomain =
+    process.env.PLAUSIBLE_DOMAIN ||
+    process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN ||
+    "sinotechjobs.vercel.app";
+  const isPlausibleDisabled =
+    process.env.PLAUSIBLE_DISABLED === "true" ||
+    process.env.NEXT_PUBLIC_PLAUSIBLE_DISABLED === "true" ||
+    plausibleDomain === "disabled" ||
+    process.env.PLAUSIBLE_DOMAIN === "false";
+
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+      <head>
+        {!isPlausibleDisabled && (
+          <script defer data-domain={plausibleDomain} src="https://plausible.io/js/script.js"></script>
+        )}
+      </head>
       <body className="min-h-full flex flex-col">
         <LanguageProvider>
           <Navbar />
