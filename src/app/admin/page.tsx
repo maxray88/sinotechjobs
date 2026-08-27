@@ -19,7 +19,10 @@ interface ScrapeResponse {
     totalScrapedJobs: number;
     lastUpdated: string | null;
     reportCount: number;
+    dataStore?: "json" | "supabase";
+    error?: string;
   };
+  reports?: ScrapeReport[];
 }
 
 interface ScrapeReportResponse {
@@ -137,9 +140,34 @@ export default function AdminPage() {
       <h1 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "0.5rem" }}>
         Scraper Admin Dashboard
       </h1>
-      <p style={{ color: "var(--muted-foreground)", marginBottom: "2rem", fontSize: "0.875rem" }}>
+      <p style={{ color: "var(--muted-foreground)", marginBottom: "1rem", fontSize: "0.875rem" }}>
         Manage job scraping sources and trigger scraping runs
       </p>
+      {stats && stats.dataStore && (
+        <div style={{ marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+          <span
+            style={{
+              display: "inline-block",
+              fontSize: "0.7rem",
+              fontWeight: 700,
+              padding: "0.25rem 0.6rem",
+              borderRadius: "9999px",
+              background: stats.dataStore === "supabase" ? "#e0f2fe" : "#f3f4f6",
+              color: stats.dataStore === "supabase" ? "#0369a1" : "#374151",
+              border: "1px solid var(--border)",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}
+          >
+            Data Store: {stats.dataStore}
+          </span>
+          {stats.error && (
+            <span style={{ fontSize: "0.75rem", color: "#dc2626" }} title={stats.error}>
+              ({stats.error})
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Stats */}
       {stats && (
