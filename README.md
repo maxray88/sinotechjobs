@@ -29,6 +29,12 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
+## Deployment
+
+- **Vercel:** Auto-deploy from `main` → `sinotechjobs.vercel.app` (see `vercel.json`).
+- **Supabase env required:** `SUPABASE_URL` (`https://nzlhmjcugibacpbiqtyr.supabase.co`), `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (server-only), `DATA_STORE=supabase` (use `DATA_STORE=json` for local file fallback). Seed production DB once: `npm run seed`.
+- **Cron:** Single daily at 06:00 UTC → `/api/cron/daily` (Supabase-backed). Weekly route at `/api/cron/weekly` available but not scheduled by default. Protect with `CRON_SECRET` (`Authorization: Bearer $CRON_SECRET`).
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.

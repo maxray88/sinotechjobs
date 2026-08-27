@@ -1,8 +1,8 @@
 # SinotechJobs — Project Handover Document
 
-> **Last updated:** 2026-08-11
-> **Project location:** `C:\Users\FBMHCA5\sinotechjobs`
-> **Status:** MVP complete, ready for deployment
+> **Last updated:** 2026-08-27
+> **Project location:** `~/01_Coding_Projects/05_Sinotech_Jobboard` (macOS) — **GitHub:** `maxray88/sinotechjobs` (public) — **Vercel:** `sinotechjobs.vercel.app` — **Supabase:** `nzlhmjcugibacpbiqtyr`
+> **Status:** Phase 2 done — production READY with Supabase (Postgres), 32 sample jobs seeded
 
 ---
 
@@ -24,7 +24,8 @@ A trilingual (EN/ZH/DE) job board platform connecting Chinese-speaking tech tale
 | Styling | Tailwind CSS 4 + inline styles for dynamic theming |
 | HTML Parsing | cheerio 1.2 |
 | JS-Rendered Scraping | Puppeteer 25 + @sparticuz/chromium (serverless) |
-| Storage | JSON file-based (`data/scraped-jobs.json`) — designed to be replaced by Supabase |
+| Storage | Supabase (Postgres) with JSON fallback via `DATA_STORE` switch (`supabase` \| `json`) — `data/scraped-jobs.json` used when `DATA_STORE=json` |
+| Supabase Client | `@supabase/supabase-js` 2.54 |
 | Deployment | Vercel (cron jobs configured) |
 | Package Manager | npm |
 
@@ -67,10 +68,10 @@ A trilingual (EN/ZH/DE) job board platform connecting Chinese-speaking tech tale
 - [x] CLI shows `[JS+Puppeteer]` tag
 
 ### Vercel Cron Configuration (DONE)
-- [x] `vercel.json` with 2 cron jobs:
-  - Daily at 6:00 AM UTC → `/api/scrape`
-  - Weekly Monday 12:00 PM UTC → `/api/scrape?mode=full`
-- [x] `CRON_SECRET` env var support for authentication
+- [x] `vercel.json` with single daily cron:
+  - Daily at 06:00 UTC → `/api/cron/daily` (Supabase-backed, `DATA_STORE=supabase`)
+  - Weekly route at `/api/cron/weekly` available (not scheduled by default)
+- [x] `CRON_SECRET` env var support for authentication (`Authorization: Bearer $CRON_SECRET`)
 
 ---
 
@@ -96,7 +97,11 @@ sinotechjobs/
 │   │   │   └── page.tsx            # Scraper admin dashboard
 │   │   └── api/
 │   │       ├── scrape/route.ts     # Scraper API (GET: stats, POST: scrape/clear)
-│   │       └── jobs/route.ts       # All jobs API (GET)
+│   │       ├── jobs/route.ts       # All jobs API (GET)
+│   │       ├── subscribe/route.ts  # Newsletter subscribe
+│   │       └── cron/
+│   │           ├── daily/route.ts  # Vercel Cron: daily 06:00 UTC
+│   │           └── weekly/route.ts # Weekly cron (manual / optional)
 │   ├── components/
 │   │   ├── LanguageProvider.tsx    # i18n context (EN/ZH/DE)
 │   │   ├── Navbar.tsx              # Nav + language switcher
@@ -105,21 +110,37 @@ sinotechjobs/
 │   └── lib/
 │       ├── types.ts                # Core types (Job, JobField, etc.)
 │       ├── jobs.ts                 # 32 curated sample jobs
-│       ├── all-jobs.ts             # Combines sample + scraped jobs
+│       ├── all-jobs.ts             # Combines sample + scraped jobs (Supabase/JSON via DATA_STORE)
 │       ├── i18n.ts                 # Full translations EN/ZH/DE
+│       ├── db/                     # Supabase (Postgres) — DATA_STORE=supabase
+│       │   ├── client.ts           # getSupabaseAdmin / getSupabasePublic
+│       │   ├── jobs-repo.ts        # Jobs CRUD
+│       │   ├── reports-repo.ts     # Scrape reports
+│       │   ├── email-repo.ts       # Email subscriptions
+│       │   ├── mappers.ts          # DB ↔ domain mappers
+│       │   ├── types.ts            # DB row types
+│       │   └── index.ts
 │       └── scraper/
 │           ├── types.ts            # Scraper types + rawToJob() + auto-detection
 │           ├── sources.ts          # 13 configured sources
 │           ├── engine.ts           # Core scraper (RSS/HTML/JSON API + Puppeteer routing)
 │           ├── keywords.ts         # Chinese keyword matcher (30+ keywords)
-│           ├── storage.ts          # JSON file storage (data/scraped-jobs.json)
+│           ├── storage.ts          # Supabase or JSON fallback (DATA_STORE switch)
+│           ├── health.ts           # Health checks / scrape diagnostics
 │           └── puppeteer.ts         # Headless Chrome for JS-rendered pages
 ├── scripts/
-│   └── scrape.ts                   # CLI scraper script
-├── data/                           # Runtime data (auto-created)
-│   ├── scraped-jobs.json           # Scraped jobs storage
-│   └── scrape-reports.json         # Scrape history (last 20)
-├── vercel.json                     # Vercel Cron config
+│   ├── scrape.ts                   # CLI scraper script
+│   ├── seed.ts                     # Seeds 32 sample jobs to Supabase (npm run seed)
+│   └── measure-build.sh            # Build size + Puppeteer bundle measurement
+├── docs/
+│   └── build-report.md             # Build size & Puppeteer impact report
+├── db/
+│   └── migrations/
+│       └── 001_init.sql            # Supabase schema (jobs, scrape_reports, email_subscriptions, etc.)
+├── data/                           # Runtime JSON fallback (DATA_STORE=json, auto-created)
+│   ├── scraped-jobs.json           # Scraped jobs storage (fallback)
+│   └── scrape-reports.json         # Scrape history (last 20, fallback)
+├── vercel.json                     # Vercel Cron: single daily at 06:00 UTC → /api/cron/daily
 ├── package.json
 ├── tsconfig.json
 └── next.config.ts
@@ -130,32 +151,41 @@ sinotechjobs/
 ## 4. How to Run
 
 ### Development
-```powershell
-cd C:\Users\FBMHCA5\sinotechjobs
+```bash
+cd ~/01_Coding_Projects/05_Sinotech_Jobboard
 npm install
-npm run dev          # http://localhost:3000
+# Configure Supabase (required for production data store)
+# cp .env.example .env.local  # then set SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+# DATA_STORE=supabase  # default; use DATA_STORE=json for local file fallback
+npm run seed           # Seeds 32 sample jobs to Supabase (requires SUPABASE_URL + SERVICE_ROLE_KEY)
+npm run dev          # http://localhost:3000  # DATA_STORE=supabase by default; DATA_STORE=json for file fallback
 ```
 
 ### Production Build
-```powershell
+```bash
 npm run build
 npm start            # http://localhost:3000
 ```
 
 ### Lint & Type Check
-```powershell
-npm run lint
+```bash
+npm run lint         # ESLint
+npx tsc --noEmit     # Type check only
 ```
 
 ### Run Scraper (CLI)
-```powershell
+```bash
 npm run scrape                                    # All enabled sources
 npm run scrape:verbose                            # With per-source details
 npx tsx scripts/scrape.ts --source=indeed-chinese-de  # Single source
+# Seeding (Supabase):
+npm run seed                                      # Seed 32 sample jobs to Supabase
+DATA_STORE=json npm run dev                       # Run with JSON file fallback (no Supabase)
+DATA_STORE=supabase npm run dev                   # Run with Supabase (default, requires env)
 ```
 
 ### Run Scraper (API)
-```powershell
+```bash
 # Get stats and sources
 curl http://localhost:3000/api/scrape
 
@@ -170,10 +200,12 @@ curl -X POST http://localhost:3000/api/scrape -H "Content-Type: application/json
 ```
 
 ### Deploy to Vercel
-```powershell
-cd C:\Users\FBMHCA5\sinotechjobs
+```bash
+cd ~/01_Coding_Projects/05_Sinotech_Jobboard
 npx vercel          # Preview deploy
-npx vercel --prod   # Production deploy
+npx vercel --prod   # Production deploy (auto-deploy from main on push)
+# Vercel env required: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, DATA_STORE=supabase, CRON_SECRET
+# Cron: single daily at 06:00 UTC → /api/cron/daily (see vercel.json)
 ```
 
 ---
@@ -183,7 +215,11 @@ npx vercel --prod   # Production deploy
 ### Environment Variables
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `CRON_SECRET` | Optional | Protects `/api/scrape?mode=full` from unauthorized access |
+| `SUPABASE_URL` | Required (when `DATA_STORE=supabase`) | Supabase project URL — project `nzlhmjcugibacpbiqtyr` (`https://nzlhmjcugibacpbiqtyr.supabase.co`) |
+| `SUPABASE_ANON_KEY` | Required | Supabase anon key (client-safe) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Required (server) | Supabase service role key — server-only, never expose to client (used by `src/lib/db/client.ts` + `scripts/seed.ts`) |
+| `DATA_STORE` | Optional | `supabase` (default, production — Postgres) \| `json` (local file fallback: `data/scraped-jobs.json`) |
+| `CRON_SECRET` | Optional | Protects `/api/cron/*` and `/api/scrape` cron endpoints (`Authorization: Bearer $CRON_SECRET`) |
 
 ### Adding/Editing Job Sources
 Edit `src/lib/scraper/sources.ts`. Each source has:
@@ -217,21 +253,21 @@ Edit `src/lib/scraper/sources.ts`. Each source has:
 ```
 
 ### Vercel Cron Schedule
-Edit `vercel.json`:
+Edit `vercel.json` (single daily cron):
 ```json
 {
   "crons": [
-    { "path": "/api/scrape", "schedule": "0 6 * * *" },        // Daily 6AM UTC
-    { "path": "/api/scrape?mode=full", "schedule": "0 12 * * 1" } // Weekly Monday
+    { "path": "/api/cron/daily", "schedule": "0 6 * * *" }
   ]
 }
 ```
+Daily at 06:00 UTC → `/api/cron/daily` (Supabase-backed). Weekly cron at `/api/cron/weekly` is available but not scheduled by default — trigger manually or add a second entry if needed.
 
 ### Known Limitations
-- **Local network blocked:** McAfee Web Gateway blocks external requests in the current development environment. Scraping will work on Vercel or any server with open internet.
-- **JSON file storage:** Current storage is file-based (`data/`). This works on Vercel but is ephemeral — files don't persist across serverless function invocations. **Must migrate to a database** (Supabase recommended) for production.
-- **Puppeteer on Vercel:** `@sparticuz/chromium` binary is ~50MB. Vercel Hobby plan has 250MB function size limit. Pro plan recommended for production.
+- **Storage:** Production uses Supabase (Postgres) via `src/lib/db/*` with `DATA_STORE=supabase` (project `nzlhmjcugibacpbiqtyr`). JSON file fallback (`data/scraped-jobs.json`, `data/scrape-reports.json`) remains for local dev when `DATA_STORE=json`; files are ephemeral on Vercel serverless — do not rely on JSON in production.
+- **Puppeteer on Vercel:** `@sparticuz/chromium` binary is ~50MB. Vercel Hobby plan has 250MB function size limit. Pro plan recommended for production. See `docs/build-report.md` and `scripts/measure-build.sh` for size tracking.
 - **Anti-bot detection:** Puppeteer alone won't bypass Cloudflare/PerimeterX. For production scraping of LinkedIn/Indeed, consider a scraping API service (ScrapingBee, ScraperAPI, Apify).
+- **Cron:** Vercel Cron is single daily at 06:00 UTC → `/api/cron/daily`. Weekly full scrape via `/api/cron/weekly` is not scheduled by default.
 
 ---
 
@@ -502,9 +538,9 @@ Edit `vercel.json`:
 ## 9. Technical Notes for Continuing Agent
 
 ### Architecture Decisions
-- **Server/Client split:** Pages that need `fs` (file storage) are server components. Interactive pages (filters, forms) are client components. Pattern: `page.tsx` (server) → `*Client.tsx` (client).
+- **Server/Client split:** Pages that need `fs`/DB (Supabase or file fallback) are server components. Interactive pages (filters, forms) are client components. Pattern: `page.tsx` (server) → `*Client.tsx` (client). `DATA_STORE` switch is server-only.
 - **Language context:** `LanguageProvider` wraps the entire app. Use `useLang()` hook to access `lang`, `setLang()`, and `t` (translations).
-- **Job data flow:** `sampleJobs` (static, `src/lib/jobs.ts`) + `scrapedJobs` (dynamic, `data/scraped-jobs.json`) → `getAllJobs()` in `src/lib/all-jobs.ts`
+- **Job data flow:** `sampleJobs` (static, `src/lib/jobs.ts`, 32 seeded) + `scrapedJobs` (dynamic — Supabase `jobs` table when `DATA_STORE=supabase`, else `data/scraped-jobs.json`) → `getAllJobs()` in `src/lib/all-jobs.ts` (now DB-aware via `src/lib/db/*`); seed via `npm run seed` (`scripts/seed.ts` + `db/migrations/001_init.sql`, Supabase project `nzlhmjcugibacpbiqtyr`)
 - **Scraper routing:** Engine checks `source.jsRendered` → if true, uses Puppeteer (`renderPage()`); otherwise uses `fetch()` (via `fetchWithRetry()`)
 
 ### Adding a New Job Source
@@ -533,18 +569,20 @@ All translation strings are in `src/lib/i18n.ts` under `translations.en`, `trans
 - `footer.*` — footer content
 
 ### Testing
-- No test framework configured yet. Manual testing via `npm run dev` + browser.
+- Tests: `vitest` (`npm test`, `npm run test:watch`) — see `src/lib/scraper/health.test.ts` etc.; coverage via `npm run test -- --coverage`
 - Lint: `npm run lint`
-- Build: `npm run build` (includes TypeScript type checking)
-- API test: Use the admin dashboard at `/admin` or curl commands above
+- Build: `npm run build` (includes TypeScript type checking) + `npx tsc --noEmit`
+- Build size: `scripts/measure-build.sh` → `docs/build-report.md`
+- API test: Use the admin dashboard at `/admin` or curl commands above (`/api/cron/daily`, `/api/jobs`, `/api/scrape`)
 
 ### Deployment Checklist
-- [ ] Set `CRON_SECRET` env var in Vercel
-- [ ] Set `SUPABASE_URL` + `SUPABASE_ANON_KEY` after database migration
+- [ ] Set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` in Vercel (Supabase project `nzlhmjcugibacpbiqtyr`) + `DATA_STORE=supabase`
+- [ ] Set `CRON_SECRET` env var in Vercel (protects `/api/cron/*` + `/api/scrape`)
 - [ ] Set `PUPPETEER_SKIP_DOWNLOAD=false` (let Vercel download Chrome or use @sparticuz/chromium)
-- [ ] Verify Vercel Cron jobs registered (Vercel Dashboard → Settings → Cron Jobs)
-- [ ] Test `/api/scrape?mode=daily` endpoint after deploy
-- [ ] Verify `data/` directory is writable (or migrate to Supabase first)
+- [ ] Run `npm run seed` once (or `npx tsx --env-file=.env.local scripts/seed.ts`) to seed 32 sample jobs — verify in Supabase dashboard
+- [ ] Verify Vercel Cron job registered (Vercel Dashboard → Settings → Cron Jobs): single daily at 06:00 UTC → `/api/cron/daily`
+- [ ] Test `/api/cron/daily` (with `Authorization: Bearer $CRON_SECRET`) and `/api/jobs` after deploy
+- [ ] Verify `DATA_STORE=supabase` in production; `data/` JSON fallback is local-only
 
 ---
 
@@ -554,5 +592,6 @@ All translation strings are in `src/lib/i18n.ts` under `translations.en`, `trans
 - **Original concept date:** 2026-08-11
 - **MVP completion:** 2026-08-11
 - **Tech lead:** GLM (via opencode)
-- **Environment:** Windows 11, PowerShell 5.1, Node 24, npm 11
-- **Local network:** McAfee Web Gateway blocks external requests — scraping tests fail locally but work on Vercel
+- **Environment:** macOS, Node 24, npm 11 — `~/01_Coding_Projects/05_Sinotech_Jobboard` (bash)
+- **Deploy:** Vercel `sinotechjobs.vercel.app` (auto-deploy from `main`), Cron daily 06:00 UTC → `/api/cron/daily`
+- **Database:** Supabase `nzlhmjcugibacpbiqtyr` (`DATA_STORE=supabase`, fallback `DATA_STORE=json` for local)
