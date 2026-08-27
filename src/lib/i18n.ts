@@ -214,6 +214,30 @@ export const translations = {
         error: "Something went wrong. Please try again.",
       },
     },
+    profile: {
+      title: "Candidate Profile",
+      subtitle: "Manage your profile and visibility to employers",
+      fields: {
+        displayName: "Display Name",
+        headline: "Headline",
+        bio: "Bio",
+        skills: "Skills",
+        languages: "Languages",
+        preferredLocations: "Preferred Locations",
+        preferredFields: "Preferred Fields",
+        visible: "Visible to employers",
+      },
+      hints: {
+        skills: "Comma-separated, e.g. Python, ROS, PyTorch",
+        visible: "When enabled, employers can discover your profile",
+      },
+      save: "Save Profile",
+      saved: "Profile saved!",
+      errors: {
+        tooLong: "Value is too long",
+        generic: "Please check your input.",
+      },
+    },
     footer: {
       rights: "All rights reserved.",
       mission: "Connecting Chinese-speaking tech talent with DACH employers.",
@@ -436,6 +460,30 @@ export const translations = {
         error: "出错了，请重试。",
       },
     },
+    profile: {
+      title: "候选人资料",
+      subtitle: "管理您的资料及对雇主的可见性",
+      fields: {
+        displayName: "显示名称",
+        headline: "头衔",
+        bio: "个人简介",
+        skills: "技能",
+        languages: "语言",
+        preferredLocations: "期望地点",
+        preferredFields: "期望领域",
+        visible: "对雇主可见",
+      },
+      hints: {
+        skills: "以逗号分隔，例如：Python, ROS, PyTorch",
+        visible: "开启后，雇主可以发现您的资料",
+      },
+      save: "保存资料",
+      saved: "已保存！",
+      errors: {
+        tooLong: "内容过长",
+        generic: "请检查您的输入。",
+      },
+    },
     footer: {
       rights: "保留所有权利。",
       mission: "连接中文科技人才与德语区雇主。",
@@ -656,6 +704,30 @@ export const translations = {
         published: "Auf der Jobbörse veröffentlicht",
         rejected: "Abgelehnt",
         error: "Etwas ist schiefgelaufen. Bitte erneut versuchen.",
+      },
+    },
+    profile: {
+      title: "Kandidatenprofil",
+      subtitle: "Verwalten Sie Ihr Profil und die Sichtbarkeit für Arbeitgeber",
+      fields: {
+        displayName: "Anzeigename",
+        headline: "Titel",
+        bio: "Über mich",
+        skills: "Fähigkeiten",
+        languages: "Sprachen",
+        preferredLocations: "Bevorzugte Standorte",
+        preferredFields: "Bevorzugte Bereiche",
+        visible: "Für Arbeitgeber sichtbar",
+      },
+      hints: {
+        skills: "Komma-getrennt, z. B. Python, ROS, PyTorch",
+        visible: "Wenn aktiviert, können Arbeitgeber Ihr Profil finden",
+      },
+      save: "Profil speichern",
+      saved: "Profil gespeichert!",
+      errors: {
+        tooLong: "Wert ist zu lang",
+        generic: "Bitte überprüfen Sie Ihre Eingabe.",
       },
     },
     footer: {
