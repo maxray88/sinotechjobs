@@ -3,16 +3,54 @@
 import { useState } from "react";
 import { useLang } from "./LanguageProvider";
 
-export default function EmailCapture() {
-  const { t } = useLang();
-  const [email, setEmail] = useState("");
-  const [submitted, setSubmitted] = useState(false);
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  const handleSubmit = (e: React.FormEvent) => {
+type Status = "idle" | "loading" | "success" | "error";
+
+export default function EmailCapture() {
+  const { lang, t } = useLang();
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<Status>("idle");
+  const [message, setMessage] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email) {
-      setSubmitted(true);
+    const trimmed = email.trim();
+
+    if (!EMAIL_REGEX.test(trimmed)) {
+      setStatus("error");
+      setMessage("Invalid email");
+      return;
+    }
+
+    setStatus("loading");
+    setMessage("");
+
+    try {
+      const res = await fetch("/api/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmed, language: lang }),
+      });
+
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        duplicate?: boolean;
+      };
+
+      if (!res.ok) {
+        setStatus("error");
+        setMessage(data.error || "Invalid email");
+        return;
+      }
+
+      setStatus("success");
+      setMessage(t.emailCapture.success);
       setEmail("");
+    } catch {
+      setStatus("error");
+      setMessage("Internal error");
     }
   };
 
@@ -32,9 +70,18 @@ export default function EmailCapture() {
       <p style={{ fontSize: "0.95rem", opacity: 0.8, marginBottom: "2rem" }}>
         {t.emailCapture.subtitle}
       </p>
-      {submitted ? (
-        <p style={{ fontSize: "1rem", fontWeight: 600, padding: "0.75rem", background: "rgba(255,255,255,0.15)", borderRadius: "0.5rem", display: "inline-block" }}>
-          ✓ {t.emailCapture.success}
+      {status === "success" ? (
+        <p
+          style={{
+            fontSize: "1rem",
+            fontWeight: 600,
+            padding: "0.75rem",
+            background: "rgba(255,255,255,0.15)",
+            borderRadius: "0.5rem",
+            display: "inline-block",
+          }}
+        >
+          ✓ {message || t.emailCapture.success}
         </p>
       ) : (
         <form
@@ -54,6 +101,7 @@ export default function EmailCapture() {
             onChange={(e) => setEmail(e.target.value)}
             placeholder={t.emailCapture.placeholder}
             required
+            disabled={status === "loading"}
             style={{
               flex: "1",
               minWidth: "200px",
@@ -66,6 +114,7 @@ export default function EmailCapture() {
           />
           <button
             type="submit"
+            disabled={status === "loading"}
             style={{
               background: "var(--accent)",
               color: "white",
@@ -74,12 +123,31 @@ export default function EmailCapture() {
               border: "none",
               fontWeight: 600,
               fontSize: "0.875rem",
-              cursor: "pointer",
+              cursor: status === "loading" ? "not-allowed" : "pointer",
+              opacity: status === "loading" ? 0.7 : 1,
             }}
           >
-            {t.emailCapture.button}
+            {status === "loading" ? "..." : t.emailCapture.button}
           </button>
         </form>
+      )}
+      {status === "error" && message && (
+        <p
+          role="alert"
+          style={{
+            marginTop: "1rem",
+            fontSize: "0.875rem",
+            fontWeight: 500,
+            color: "#fecaca",
+          }}
+        >
+          {message}
+        </p>
+      )}
+      {status === "loading" && (
+        <p style={{ marginTop: "0.75rem", fontSize: "0.85rem", opacity: 0.8 }}>
+          Loading...
+        </p>
       )}
     </div>
   );
