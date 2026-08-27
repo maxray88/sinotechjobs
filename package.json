@@ -24,7 +24,8 @@
     "server-only": "^0.0.1",
     "@supabase/ssr": "^0.5.0",
     "zod": "^3.23.0",
-    "resend": "^4.0.0"
+    "resend": "^4.0.0",
+    "stripe": "^14.25.0"
   },
   "devDependencies": {
     "@sparticuz/chromium": "^149.0.0",

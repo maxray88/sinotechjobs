@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useLang } from "@/components/LanguageProvider";
 import Link from "next/link";
 
@@ -15,6 +16,9 @@ type Posting = {
   submitted_at: string;
   rejection_reason?: string | null;
   application_url?: string | null;
+  payment_status?: string | null;
+  stripe_session_id?: string | null;
+  featured_until?: string | null;
 };
 
 function statusStyle(status: string): React.CSSProperties {
@@ -30,6 +34,9 @@ function statusStyle(status: string): React.CSSProperties {
 
 export default function EmployerDashboardClient({ items }: { items: Posting[] }) {
   const { t, lang } = useLang();
+  const [payingId, setPayingId] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   // Fallback to English if employer missing (should not happen after i18n extension)
   const dash: {
     title: string;
@@ -41,6 +48,9 @@ export default function EmployerDashboardClient({ items }: { items: Posting[] })
     fields: Record<string, string>;
     publishedNote: string;
     viewApplication: string;
+    pay?: string;
+    paid?: string;
+    paying?: string;
   } = (t as unknown as { employer?: { dashboard?: typeof dash } }).employer?.dashboard ?? {
     title: "Employer Dashboard",
     subtitle: "Manage your postings and track review status",
@@ -51,7 +61,43 @@ export default function EmployerDashboardClient({ items }: { items: Posting[] })
     fields: { submittedAt: "Submitted", reason: "Reason" },
     publishedNote: "Published to job board",
     viewApplication: "View application link",
+    pay: "Pay",
+    paid: "Paid",
+    paying: "Redirecting…",
   };
+
+  const payLabel = dash.pay ?? "Pay";
+  const paidLabel = dash.paid ?? "Paid";
+  const payingLabel = (dash as unknown as { paying?: string }).paying ?? "Redirecting…";
+
+  async function handlePay(postingId: number | string) {
+    setErrorMsg(null);
+    setPayingId(String(postingId));
+    try {
+      const res = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postingId: Number(postingId) }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+      if (!res.ok) {
+        setErrorMsg(data.error || `Payment failed (${res.status})`);
+        setPayingId(null);
+        return;
+      }
+      if (data.url) {
+        // eslint-disable-next-line react-hooks/immutability
+        window.location.href = data.url;
+      } else {
+        setErrorMsg("No checkout URL returned");
+        setPayingId(null);
+      }
+    } catch (err) {
+      console.error("[EmployerDashboard] pay error", err);
+      setErrorMsg("Payment failed. Please try again.");
+      setPayingId(null);
+    }
+  }
 
   return (
     <div style={{ maxWidth: "900px", margin: "0 auto", padding: "2rem 1.5rem" }}>
@@ -59,6 +105,22 @@ export default function EmployerDashboardClient({ items }: { items: Posting[] })
       <p style={{ color: "var(--muted-foreground)", marginBottom: "2rem", fontSize: "0.875rem" }}>
         {dash.subtitle}
       </p>
+
+      {errorMsg && (
+        <div
+          role="alert"
+          style={{
+            background: "#fee2e2",
+            color: "#991b1b",
+            padding: "0.75rem 1rem",
+            borderRadius: "0.5rem",
+            marginBottom: "1rem",
+            fontSize: "0.875rem",
+          }}
+        >
+          {errorMsg}
+        </div>
+      )}
 
       {items.length === 0 ? (
         <div className="card" style={{ textAlign: "center", padding: "2.5rem" }}>
@@ -97,6 +159,10 @@ export default function EmployerDashboardClient({ items }: { items: Posting[] })
                 })
               : "";
             const titleDisplay = item.job_title_zh ? `${item.job_title} / ${item.job_title_zh}` : item.job_title;
+            const isPaidTier = tierKey !== "free";
+            const isPaid = item.payment_status === "paid";
+            const showPay = isPaidTier && !isPaid;
+            const showPaidBadge = isPaidTier && isPaid;
 
             return (
               <div key={String(item.id)} className="card" style={{ padding: "1.25rem" }}>
@@ -170,6 +236,21 @@ export default function EmployerDashboardClient({ items }: { items: Posting[] })
                     >
                       {statusLabel}
                     </span>
+                    {showPaidBadge && (
+                      <span
+                        style={{
+                          background: "#d1fae5",
+                          color: "#065f46",
+                          padding: "0.25rem 0.625rem",
+                          borderRadius: "9999px",
+                          fontSize: "0.75rem",
+                          fontWeight: 700,
+                          border: "1px solid #a7f3d0",
+                        }}
+                      >
+                        ✓ {paidLabel}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -200,6 +281,28 @@ export default function EmployerDashboardClient({ items }: { items: Posting[] })
                     >
                       {item.application_url}
                     </a>
+                  )}
+
+                  {showPay && (
+                    <button
+                      onClick={() => handlePay(item.id)}
+                      disabled={payingId === String(item.id)}
+                      style={{
+                        alignSelf: "flex-start",
+                        marginTop: "0.25rem",
+                        background: "var(--primary, #111827)",
+                        color: "white",
+                        border: "none",
+                        padding: "0.5rem 1rem",
+                        borderRadius: "0.5rem",
+                        fontSize: "0.8125rem",
+                        fontWeight: 600,
+                        cursor: payingId === String(item.id) ? "not-allowed" : "pointer",
+                        opacity: payingId === String(item.id) ? 0.7 : 1,
+                      }}
+                    >
+                      {payingId === String(item.id) ? payingLabel : payLabel}
+                    </button>
                   )}
 
                   {statusKey === "approved" && (
