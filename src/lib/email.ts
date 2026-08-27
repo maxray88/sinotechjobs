@@ -4,7 +4,7 @@ import { Resend } from "resend";
 import type { Job } from "@/lib/types";
 
 export type EmailLocale = "en" | "zh" | "de";
-export type EmailTemplate = "posting_submitted" | "posting_approved" | "posting_rejected" | "weekly_digest";
+export type EmailTemplate = "posting_submitted" | "posting_approved" | "posting_rejected" | "weekly_digest" | "scrape_watchdog";
 
 export async function sendEmail(opts: {
   to: string;
@@ -109,6 +109,16 @@ export async function sendEmail(opts: {
     } else {
       html = `<p>Hi,</p><p>There are <strong>${esc(countStr)}</strong> new jobs matching your saved filters in the past week:</p><ul>${listItems}</ul>${filtersLine}<p><a href="https://sinotechjobs.vercel.app/jobs">View all jobs</a></p><p>— SinotechJobs Team</p>`;
     }
+  } else if (opts.template === "scrape_watchdog") {
+    if (opts.locale === "zh") {
+      subject = `抓取监控告警: ${safeReason}`;
+    } else if (opts.locale === "de") {
+      subject = `Scrape-Watchdog-Alarm: ${safeReason}`;
+    } else {
+      subject = `Scrape watchdog alert: ${safeReason}`;
+    }
+    const countVal = opts.data.count != null ? String(opts.data.count) : "";
+    html = `<p>Scrape health degraded: ${safeReason}. Successful ${esc(countVal)} / total.</p>`;
   } else {
     // posting_rejected
     if (opts.locale === "zh") {

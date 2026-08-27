@@ -3,6 +3,9 @@ import { getEnabledSources } from "@/lib/scraper/sources";
 import { scrapeAllSources } from "@/lib/scraper/engine";
 import { addScrapedJobsAsync, saveScrapeReportAsync } from "@/lib/scraper/storage";
 import type { ScrapeReport } from "@/lib/scraper/types";
+import { getSupabaseAdmin } from "@/lib/db/client";
+import { checkWatchdog } from "@/lib/watchdog";
+import { sendEmail } from "@/lib/email";
 
 export const maxDuration = 300;
 
@@ -66,6 +69,50 @@ export async function GET(request: NextRequest) {
       duplicates: skipped,
       totalJobsInDb: total,
     };
+
+    // Watchdog: fetch last 3 reports and alert if needed (non-blocking)
+    try {
+      const supabase = getSupabaseAdmin();
+      const { data, error } = await supabase
+        .from("scrape_reports")
+        .select("successful_sources,total_sources,timestamp")
+        .order("timestamp", { ascending: false })
+        .limit(3);
+      if (!error && data) {
+        const recentReports = (data as { successful_sources: number | null; total_sources: number | null; timestamp: string | null }[]).map((r) => ({
+          successful_sources: r.successful_sources ?? 0,
+          total_sources: r.total_sources ?? 0,
+          timestamp: r.timestamp ?? undefined,
+        }));
+        const { alert, reason } = checkWatchdog(recentReports);
+        if (alert && reason) {
+          if (!process.env.RESEND_API_KEY) {
+            console.warn("[cron/daily] RESEND_API_KEY missing — skipping watchdog email");
+          }
+          const adminRaw = process.env.ADMIN_EMAILS ?? "";
+          const adminEmails = adminRaw
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+          if (adminEmails.length === 0) {
+            console.warn("[cron/daily] ADMIN_EMAILS not set — skipping watchdog email");
+          } else {
+            for (const to of adminEmails) {
+              void sendEmail({
+                to,
+                locale: "en",
+                template: "scrape_watchdog" as unknown as import("@/lib/email").EmailTemplate,
+                data: { reason, jobTitle: `Scrape watchdog: ${reason}`, count: recentReports.length },
+              }).catch((err) => console.error("[cron/daily] watchdog email failed", err));
+            }
+          }
+        }
+      } else if (error) {
+        console.warn("[cron/daily] watchdog fetch failed", error);
+      }
+    } catch (watchdogErr) {
+      console.warn("[cron/daily] watchdog check failed", watchdogErr);
+    }
 
     return NextResponse.json({ ok: true, mode: "daily", result }, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
