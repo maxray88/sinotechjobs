@@ -11,7 +11,8 @@
     "scrape:verbose": "npx tsx scripts/scrape.ts --verbose",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "seed": "npx tsx scripts/seed.ts"
   },
   "dependencies": {
     "cheerio": "^1.2.0",

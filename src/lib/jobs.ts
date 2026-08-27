@@ -1,3 +1,4 @@
+// Seed source for Supabase — not used at runtime when DATA_STORE=supabase except via seed script
 import type { Job } from "./types";
 
 export const sampleJobs: Job[] = [
