@@ -31,6 +31,7 @@ export interface ScraperSource {
   keywords: string[];
   defaultField?: JobField;
   defaultLocationCode?: JobLocation;
+  scrapingApi?: boolean; // when true and SCRAPING_API_KEY set, try managed API first
 }
 
 export interface ScrapedJobRaw {
@@ -44,6 +45,8 @@ export interface ScrapedJobRaw {
   sourceName: string;
 }
 
+export type FetchMode = "scraping-api" | "puppeteer" | "direct";
+
 export interface ScrapeResult {
   source: ScraperSource;
   jobsFound: number;
@@ -51,6 +54,7 @@ export interface ScrapeResult {
   jobs: ScrapedJobRaw[];
   errors: string[];
   duration: number;
+  fetchMode?: FetchMode; // which fetch path was used: scraping-api | puppeteer | direct
 }
 
 export interface ScrapeReport {

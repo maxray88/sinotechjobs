@@ -2,6 +2,7 @@ import type { ScraperSource } from "./types";
 
 export const scraperSources: ScraperSource[] = [
   {
+    // scrapingApi not needed — RSS direct fetch sufficient
     id: "stepstone-chinese-de",
     name: "StepStone DE - Chinese Keyword",
     nameZh: "StepStone 德国 - 中文关键词",
@@ -13,6 +14,7 @@ export const scraperSources: ScraperSource[] = [
     defaultLocationCode: "de",
   },
   {
+    // scrapingApi not enabled — puppeteer/direct sufficient for this source
     id: "indeed-chinese-de",
     name: "Indeed DE - Chinese Keyword",
     nameZh: "Indeed 德国 - 中文关键词",
@@ -37,6 +39,7 @@ export const scraperSources: ScraperSource[] = [
     },
     defaultLocationCode: "de",
   },
+  // scrapingApi not enabled — direct/puppeteer sufficient for this source
   {
     id: "bosch-careers-china",
     name: "Bosch Careers - China/AI",
@@ -69,6 +72,7 @@ export const scraperSources: ScraperSource[] = [
     type: "html",
     url: "https://www.linkedin.com/jobs/search/?keywords=chinese%20language&location=Germany",
     enabled: false,
+    scrapingApi: true, // high-risk: JS-rendered + anti-bot => try managed Scraping API first (requires SCRAPING_API_KEY)
     jsRendered: true,
     puppeteerOptions: {
       waitForSelector: ".jobs-search__results-list li, .job-search-card",
@@ -93,6 +97,7 @@ export const scraperSources: ScraperSource[] = [
     type: "html",
     url: "https://www.xing.com/jobs/search?q=chinesisch&location=Deutschland",
     enabled: false,
+    scrapingApi: true, // high-risk: JS-rendered + anti-bot => try managed Scraping API first (requires SCRAPING_API_KEY)
     jsRendered: true,
     puppeteerOptions: {
       waitForSelector: "[data-testid='job-posting-card'], .job-posting",
@@ -110,6 +115,7 @@ export const scraperSources: ScraperSource[] = [
     },
     defaultLocationCode: "de",
   },
+  // scrapingApi not enabled — direct/puppeteer sufficient for this source
   {
     id: "sapprosoftmoms-china",
     name: "SAP Careers - Chinese",
@@ -128,6 +134,7 @@ export const scraperSources: ScraperSource[] = [
     defaultField: "cs",
     defaultLocationCode: "de",
   },
+  // scrapingApi not enabled — direct/puppeteer sufficient for this source
   {
     id: "huawei-europe-china",
     name: "Huawei Europe Careers",
@@ -152,6 +159,7 @@ export const scraperSources: ScraperSource[] = [
     },
     defaultLocationCode: "de",
   },
+  // scrapingApi not enabled — direct/puppeteer sufficient for this source
   {
     id: "dfki-ai-china",
     name: "DFKI - AI Research",
@@ -170,6 +178,7 @@ export const scraperSources: ScraperSource[] = [
     defaultField: "ai",
     defaultLocationCode: "de",
   },
+  // scrapingApi not enabled — direct/puppeteer sufficient for this source
   {
     id: "fraunhofer-ai-china",
     name: "Fraunhofer - AI/Robotics",
@@ -188,6 +197,7 @@ export const scraperSources: ScraperSource[] = [
     defaultField: "ai",
     defaultLocationCode: "de",
   },
+  // scrapingApi not enabled — direct/puppeteer sufficient for this source
   {
     id: "make-it-in-germany",
     name: "Make it in Germany - IT/Chinese",
@@ -205,6 +215,7 @@ export const scraperSources: ScraperSource[] = [
     },
     defaultLocationCode: "de",
   },
+  // scrapingApi not enabled — direct/puppeteer sufficient for this source
   {
     id: "machinelearningjobs-de",
     name: "MachineLearningJobs.de",
@@ -223,6 +234,7 @@ export const scraperSources: ScraperSource[] = [
     defaultField: "ai",
     defaultLocationCode: "de",
   },
+  // scrapingApi not enabled — direct/puppeteer sufficient for this source
   {
     id: "remoteok-chinese",
     name: "RemoteOK - Chinese",
@@ -234,6 +246,7 @@ export const scraperSources: ScraperSource[] = [
     defaultField: "remote",
     defaultLocationCode: "remote",
   },
+  // scrapingApi not enabled — direct/puppeteer sufficient for this source
   {
     id: "dronejobs-de",
     name: "DroneJobs.de",

@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import type { ScraperSource, ScrapedJobRaw, ScrapeResult } from "./types";
+import type { ScraperSource, ScrapedJobRaw, ScrapeResult, FetchMode } from "./types";
 import { matchChineseKeywords } from "./keywords";
 import { renderPage, closeBrowser } from "./puppeteer";
 
@@ -57,30 +57,57 @@ async function fetchWithRetry(url: string, retries = 2, requestOptions?: Scraper
   return null;
 }
 
+export async function fetchViaScrapingAPI(url: string): Promise<string> {
+  const key = process.env.SCRAPING_API_KEY;
+  const provider = (process.env.SCRAPING_API_PROVIDER || "scrapingbee").toLowerCase();
+  if (!key) throw new Error("SCRAPING_API_KEY missing");
+  if (provider === "scrapingbee") {
+    const apiUrl = `https://app.scrapingbee.com/api/v1/?api_key=${encodeURIComponent(key)}&url=${encodeURIComponent(url)}&render_js=false`;
+    const res = await fetch(apiUrl);
+    if (!res.ok) throw new Error(`ScrapingBee ${res.status}`);
+    return res.text();
+  }
+  if (provider === "scraperapi") {
+    const apiUrl = `http://api.scraperapi.com?api_key=${encodeURIComponent(key)}&url=${encodeURIComponent(url)}`;
+    const res = await fetch(apiUrl);
+    if (!res.ok) throw new Error(`ScraperAPI ${res.status}`);
+    return res.text();
+  }
+  throw new Error(`Unknown provider ${provider}`);
+}
+
 export async function scrapeSource(source: ScraperSource): Promise<ScrapeResult> {
   const startTime = Date.now();
   const errors: string[] = [];
-  const jobs: ScrapedJobRaw[] = [];
+  const { html, fetchMode } = await fetchWithFallback(source, errors);
 
-  try {
-    if (source.type === "rss") {
-      const rssJobs = await scrapeRSS(source, errors);
-      jobs.push(...rssJobs);
-    } else if (source.type === "html") {
-      const htmlJobs = await scrapeHTML(source, errors);
-      jobs.push(...htmlJobs);
-    } else if (source.type === "json-api") {
-      const apiJobs = await scrapeJSONAPI(source, errors);
-      jobs.push(...apiJobs);
+  // Ensure fetchMode logging for direct when html came from scraping-api/puppeteer? Already handled.
+  // If html still null, fetchMode remains undefined.
+
+  const jobs: ScrapedJobRaw[] = [];
+  if (html) {
+    try {
+      if (source.type === "rss") {
+        jobs.push(...parseRSS(html, source));
+      } else if (source.type === "html") {
+        jobs.push(...parseHTML(html, source, errors));
+      } else if (source.type === "json-api" || source.type === "api") {
+        jobs.push(...parseJSONAPI(html, source, errors));
+      }
+    } catch (err) {
+      errors.push(`Unexpected error: ${err instanceof Error ? err.message : String(err)}`);
     }
-  } catch (err) {
-    errors.push(`Unexpected error: ${err instanceof Error ? err.message : String(err)}`);
+  } else {
+    if (errors.length === 0) errors.push(`Failed to fetch content for ${source.id}`);
   }
 
   const filtered = jobs.filter((job) => {
     const fullText = `${job.title} ${job.company} ${job.location} ${job.description ?? ""}`;
     return matchChineseKeywords(fullText).matched;
   });
+
+  // Log fetchMode in report if available
+  if (fetchMode) console.log(`[scraper] ${source.id} fetchMode=${fetchMode} jobsFound=${jobs.length} jobsFiltered=${filtered.length}`);
 
   return {
     source,
@@ -89,35 +116,62 @@ export async function scrapeSource(source: ScraperSource): Promise<ScrapeResult>
     jobs: filtered,
     errors,
     duration: Date.now() - startTime,
+    fetchMode,
   };
 }
 
+async function fetchWithFallback(
+  source: ScraperSource,
+  errors: string[]
+): Promise<{ html: string | null; fetchMode?: FetchMode }> {
+  let html: string | null = null;
+  let fetchMode: FetchMode | undefined;
+  if (source.scrapingApi && process.env.SCRAPING_API_KEY) {
+    try {
+      html = await fetchViaScrapingAPI(source.url);
+      fetchMode = "scraping-api";
+      console.log(`[scraper] ${source.id} fetched via scraping-api`);
+      return { html, fetchMode };
+    } catch (e) {
+      console.warn(`[scraper] scrapingApi failed for ${source.id}, falling back: `, e);
+    }
+  }
+  if (source.jsRendered) {
+    try {
+      const puppeteerHtml = await renderPage(source.url, {
+        waitForSelector: source.puppeteerOptions?.waitForSelector,
+        waitTimeout: source.puppeteerOptions?.waitTimeout,
+        scrollDelay: source.puppeteerOptions?.scrollDelay,
+        extraWaitMs: source.puppeteerOptions?.extraWaitMs,
+      });
+      if (puppeteerHtml) {
+        console.log(`[scraper] ${source.id} fetched via puppeteer`);
+        return { html: puppeteerHtml, fetchMode: "puppeteer" };
+      }
+      errors.push(`Puppeteer failed to render: ${source.url}`);
+    } catch (e) {
+      errors.push(`Puppeteer error for ${source.id}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  const direct = await fetchWithRetry(source.url, 2, source.requestOptions);
+  if (direct) {
+    console.log(`[scraper] ${source.id} fetched via direct`);
+    return { html: direct, fetchMode: "direct" };
+  }
+  if (errors.length === 0) errors.push(`Failed to fetch: ${source.url}`);
+  return { html: null, fetchMode };
+}
+
+// Keep fetchPageContent for backwards compat — delegates to fetchWithFallback and returns html string
 async function fetchPageContent(
   source: ScraperSource,
   errors: string[]
 ): Promise<string | null> {
-  if (source.jsRendered) {
-    const html = await renderPage(source.url, {
-      waitForSelector: source.puppeteerOptions?.waitForSelector,
-      waitTimeout: source.puppeteerOptions?.waitTimeout,
-      scrollDelay: source.puppeteerOptions?.scrollDelay,
-      extraWaitMs: source.puppeteerOptions?.extraWaitMs,
-    });
-    if (!html) {
-      errors.push(`Puppeteer failed to render: ${source.url}`);
-    }
-    return html;
-  }
-  return await fetchWithRetry(source.url, 2, source.requestOptions);
+  const { html } = await fetchWithFallback(source, errors);
+  return html;
 }
 
-async function scrapeRSS(source: ScraperSource, errors: string[]): Promise<ScrapedJobRaw[]> {
-  const html = await fetchPageContent(source, errors);
-  if (!html) {
-    if (!errors.length) errors.push(`Failed to fetch RSS: ${source.url}`);
-    return [];
-  }
-
+function parseRSS(html: string, source: ScraperSource): ScrapedJobRaw[] {
   const $ = cheerio.load(html, { xmlMode: true });
   const jobs: ScrapedJobRaw[] = [];
 
@@ -153,13 +207,7 @@ async function scrapeRSS(source: ScraperSource, errors: string[]): Promise<Scrap
   return jobs;
 }
 
-async function scrapeHTML(source: ScraperSource, errors: string[]): Promise<ScrapedJobRaw[]> {
-  const html = await fetchPageContent(source, errors);
-  if (!html) {
-    if (!errors.length) errors.push(`Failed to fetch HTML: ${source.url}`);
-    return [];
-  }
-
+function parseHTML(html: string, source: ScraperSource, errors: string[]): ScrapedJobRaw[] {
   const $ = cheerio.load(html);
   const jobs: ScrapedJobRaw[] = [];
   const selectors = source.selectors;
@@ -195,13 +243,7 @@ async function scrapeHTML(source: ScraperSource, errors: string[]): Promise<Scra
   return jobs;
 }
 
-async function scrapeJSONAPI(source: ScraperSource, errors: string[]): Promise<ScrapedJobRaw[]> {
-  const html = await fetchPageContent(source, errors);
-  if (!html) {
-    if (!errors.length) errors.push(`Failed to fetch API: ${source.url}`);
-    return [];
-  }
-
+function parseJSONAPI(html: string, source: ScraperSource, errors: string[]): ScrapedJobRaw[] {
   try {
     const data = JSON.parse(html);
     const jobs: ScrapedJobRaw[] = [];
@@ -237,6 +279,37 @@ async function scrapeJSONAPI(source: ScraperSource, errors: string[]): Promise<S
     errors.push("Failed to parse JSON API response");
     return [];
   }
+}
+
+// Legacy wrappers kept for internal compatibility — they use fetchPageContent with fallback chain
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function scrapeRSS(source: ScraperSource, errors: string[]): Promise<ScrapedJobRaw[]> {
+  const html = await fetchPageContent(source, errors);
+  if (!html) {
+    if (!errors.length) errors.push(`Failed to fetch RSS: ${source.url}`);
+    return [];
+  }
+  return parseRSS(html, source);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function scrapeHTML(source: ScraperSource, errors: string[]): Promise<ScrapedJobRaw[]> {
+  const html = await fetchPageContent(source, errors);
+  if (!html) {
+    if (!errors.length) errors.push(`Failed to fetch HTML: ${source.url}`);
+    return [];
+  }
+  return parseHTML(html, source, errors);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function scrapeJSONAPI(source: ScraperSource, errors: string[]): Promise<ScrapedJobRaw[]> {
+  const html = await fetchPageContent(source, errors);
+  if (!html) {
+    if (!errors.length) errors.push(`Failed to fetch API: ${source.url}`);
+    return [];
+  }
+  return parseJSONAPI(html, source, errors);
 }
 
 function cleanText(text: string): string {
