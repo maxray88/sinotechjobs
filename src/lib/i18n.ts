@@ -248,6 +248,18 @@ export const translations = {
       subtitle: "Your bookmarked positions",
       viewTracker: "View Tracker",
     },
+    applications: {
+      status: {
+        saved: "Saved",
+        applied: "Applied",
+        screening: "Screening",
+        interview: "Interview",
+        offer: "Offer",
+        rejected: "Rejected",
+      },
+      updateSuccess: "Status updated",
+      updateError: "Failed to update status",
+    },
     savedFilters: {
       title: "Saved Filters",
       saveFilter: "Save Filter",
@@ -513,6 +525,18 @@ export const translations = {
       subtitle: "你收藏的职位",
       viewTracker: "查看追踪",
     },
+    applications: {
+      status: {
+        saved: "已保存",
+        applied: "已投递",
+        screening: "筛选中",
+        interview: "面试中",
+        offer: "已录用",
+        rejected: "已拒绝",
+      },
+      updateSuccess: "状态已更新",
+      updateError: "更新状态失败",
+    },
     savedFilters: {
       title: "已保存筛选",
       saveFilter: "保存筛选",
@@ -777,6 +801,18 @@ export const translations = {
       title: "Gespeicherte Jobs",
       subtitle: "Deine gemerkten Positionen",
       viewTracker: "Tracker ansehen",
+    },
+    applications: {
+      status: {
+        saved: "Gespeichert",
+        applied: "Beworben",
+        screening: "Vorauswahl",
+        interview: "Interview",
+        offer: "Angebot",
+        rejected: "Abgelehnt",
+      },
+      updateSuccess: "Status aktualisiert",
+      updateError: "Status konnte nicht aktualisiert werden",
     },
     savedFilters: {
       title: "Gespeicherte Filter",

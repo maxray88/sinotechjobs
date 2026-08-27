@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useLang } from "@/components/LanguageProvider";
 import type { Job, JobField } from "@/lib/types";
@@ -9,9 +9,14 @@ type Props = {
   items: Job[];
 };
 
+const STATUSES = ["saved", "applied", "screening", "interview", "offer", "rejected"] as const;
+type Status = (typeof STATUSES)[number];
+
 export default function SavedClient({ items: initialItems }: Props) {
   const { t, lang } = useLang();
   const [items, setItems] = useState<Job[]>(initialItems);
+  const [statusMap, setStatusMap] = useState<Record<string, Status>>({});
+  const [toast, setToast] = useState<string | null>(null);
 
   const fieldColors: Record<JobField, string> = {
     ai: "#8b5cf6",
@@ -20,6 +25,31 @@ export default function SavedClient({ items: initialItems }: Props) {
     drone: "#10b981",
     remote: "#6366f1",
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch("/api/applications");
+        if (!res.ok) return;
+        const data = await res.json() as { items?: Array<{ job_id: string; status: Status }> };
+        if (cancelled) return;
+        const map: Record<string, Status> = {};
+        for (const a of data.items ?? []) {
+          if (a.job_id && a.status) {
+            map[a.job_id] = a.status;
+          }
+        }
+        setStatusMap(map);
+      } catch {
+        // ignore
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleUnsave = async (jobId: string) => {
     // optimistic removal
@@ -40,6 +70,38 @@ export default function SavedClient({ items: initialItems }: Props) {
       }
     } catch {
       setItems(prev);
+    }
+  };
+
+  const handleStatusChange = async (jobId: string, newStatus: Status) => {
+    const prevStatus = statusMap[jobId];
+    // optimistic update
+    setStatusMap((cur) => ({ ...cur, [jobId]: newStatus }));
+    try {
+      const res = await fetch("/api/applications", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId, status: newStatus }),
+      });
+      if (!res.ok) throw new Error("update failed");
+      const tr = (t as unknown as { applications?: { updateSuccess?: string } }).applications;
+      setToast(tr?.updateSuccess ?? "Status updated");
+      setTimeout(() => setToast(null), 2000);
+    } catch {
+      // revert
+      setStatusMap((cur) => {
+        const next = { ...cur };
+        if (prevStatus) {
+          next[jobId] = prevStatus;
+        } else {
+          // if no previous, fallback to saved
+          next[jobId] = "saved";
+        }
+        return next;
+      });
+      const tr = (t as unknown as { applications?: { updateError?: string } }).applications;
+      setToast(tr?.updateError ?? "Failed to update status");
+      setTimeout(() => setToast(null), 2000);
     }
   };
 
@@ -72,8 +134,34 @@ export default function SavedClient({ items: initialItems }: Props) {
         {t.saved.subtitle}
       </p>
 
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            bottom: "1rem",
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "var(--foreground)",
+            color: "var(--background)",
+            padding: "0.5rem 0.75rem",
+            borderRadius: "0.375rem",
+            fontSize: "0.8125rem",
+            fontWeight: 600,
+            zIndex: 50,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+          }}
+        >
+          {toast}
+        </div>
+      )}
+
       <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-        {items.map((job) => (
+        {items.map((job) => {
+          const currentStatus: Status = statusMap[job.id] ?? "saved";
+          const applicationsT = (t as unknown as { applications?: { status?: Record<string, string> } }).applications;
+          return (
           <div
             key={job.id}
             className="card"
@@ -132,7 +220,7 @@ export default function SavedClient({ items: initialItems }: Props) {
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.25rem" }}>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.25rem", alignItems: "center" }}>
               <Link
                 href={`/jobs/${job.id}`}
                 style={{
@@ -169,6 +257,26 @@ export default function SavedClient({ items: initialItems }: Props) {
               >
                 ☆ {t.saved.unsave}
               </button>
+              <select
+                value={currentStatus}
+                onChange={(e) => handleStatusChange(job.id, e.target.value as Status)}
+                aria-label="application status"
+                style={{
+                  border: "1px solid var(--border)",
+                  borderRadius: "0.375rem",
+                  padding: "0.25rem 0.5rem",
+                  fontSize: "0.8125rem",
+                  fontWeight: 600,
+                  background: "var(--background)",
+                  color: "var(--foreground)",
+                }}
+              >
+                {STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {applicationsT?.status?.[s] ?? s}
+                  </option>
+                ))}
+              </select>
               <Link
                 href="/saved"
                 style={{
@@ -188,7 +296,8 @@ export default function SavedClient({ items: initialItems }: Props) {
               </Link>
             </div>
           </div>
-        ))}
+        );
+        })}
       </div>
     </div>
   );
