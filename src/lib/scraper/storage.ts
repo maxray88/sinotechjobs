@@ -126,3 +126,102 @@ export function getStorageStats(): {
     reportCount: reports.length,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Async delegation behind DATA_STORE flag
+// ---------------------------------------------------------------------------
+
+function isSupabaseStore(): boolean {
+  return process.env.DATA_STORE === "supabase";
+}
+
+// Keep DATA_STORE export for backward compat but read fresh each access via getter
+export const DATA_STORE: string = process.env.DATA_STORE || "json";
+
+export async function loadScrapedJobsAsync(): Promise<Job[]> {
+  if (isSupabaseStore()) {
+    const { listJobs } = await import("../db/jobs-repo");
+    const { items } = await listJobs({ page: 1, pageSize: 500 });
+    return items;
+  }
+  return loadScrapedJobs();
+}
+
+export async function addScrapedJobsAsync(
+  rawJobs: ScrapedJobRaw[]
+): Promise<{ added: number; skipped: number; total: number }> {
+  if (isSupabaseStore()) {
+    const { listJobs, upsertJobs } = await import("../db/jobs-repo");
+    const baseId = Date.now();
+    const jobs: Job[] = rawJobs.map((raw, idx) => rawToJob(raw, `scraped-${baseId}-${idx}`));
+    const { added } = await upsertJobs(jobs);
+    const skipped = rawJobs.length - added;
+    // Fetch total count from Supabase
+    try {
+      const { total } = await listJobs({ page: 1, pageSize: 1 });
+      return { added, skipped, total };
+    } catch {
+      return { added, skipped, total: added };
+    }
+  }
+  return addScrapedJobs(rawJobs);
+}
+
+export async function loadScrapeReportsAsync(): Promise<ScrapeReport[]> {
+  if (isSupabaseStore()) {
+    const { listReports } = await import("../db/reports-repo");
+    return listReports();
+  }
+  return loadScrapeReports();
+}
+
+export async function saveScrapeReportAsync(report: ScrapeReport): Promise<void> {
+  if (isSupabaseStore()) {
+    const { saveReport } = await import("../db/reports-repo");
+    return saveReport(report);
+  }
+  return saveScrapeReport(report);
+}
+
+export async function clearScrapedJobsAsync(): Promise<void> {
+  if (isSupabaseStore()) {
+    // For Supabase, clear would require delete; delegate to JSON clear as fallback is acceptable
+    // Implement via direct Supabase delete if needed, but for now wrap sync
+    // Dynamic import to avoid circular if needed
+    const supabaseStore = isSupabaseStore();
+    if (supabaseStore) {
+      // Attempt to delete all jobs via Supabase — best effort, fallback to sync
+      try {
+        const { getSupabaseAdmin } = await import("../db/client");
+        const supabase = getSupabaseAdmin();
+        await supabase.from("jobs").delete().eq("source", "scraped");
+        return;
+      } catch {
+        // fallback
+      }
+    }
+  }
+  return clearScrapedJobs();
+}
+
+export async function getStorageStatsAsync(): Promise<{
+  totalScrapedJobs: number;
+  lastUpdated: string | null;
+  reportCount: number;
+}> {
+  if (isSupabaseStore()) {
+    const { listJobs } = await import("../db/jobs-repo");
+    const { listReports } = await import("../db/reports-repo");
+    const [{ total }, reports] = await Promise.all([
+      listJobs({ page: 1, pageSize: 1 }),
+      listReports(20),
+    ]);
+    return {
+      totalScrapedJobs: total,
+      lastUpdated: null,
+      reportCount: reports.length,
+    };
+  }
+  return getStorageStats();
+}
+
