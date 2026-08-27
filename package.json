@@ -18,7 +18,9 @@
     "next": "16.3.0",
     "puppeteer": "^25.5.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "@supabase/supabase-js": "^2.54.0",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@sparticuz/chromium": "^149.0.0",
