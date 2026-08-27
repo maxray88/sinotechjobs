@@ -135,6 +135,25 @@ export default function AdminPage() {
     }
   };
 
+  const handleReEnable = async (sourceId: string) => {
+    setError(null);
+    try {
+      const res = await fetch("/api/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "re-enable", sourceId }),
+      });
+      const json = await res.json();
+      if (json.reEnabled) {
+        fetchData();
+      } else {
+        setError(json.error || "Re-enable failed");
+      }
+    } catch {
+      setError("Network error during re-enable");
+    }
+  };
+
   const stats = data?.stats;
 
   return (
@@ -207,6 +226,7 @@ export default function AdminPage() {
                   <th style={{ padding: "0.6rem 0.75rem", fontWeight: 700, whiteSpace: "nowrap" }}>Found/Filtered</th>
                   <th style={{ padding: "0.6rem 0.75rem", fontWeight: 700, whiteSpace: "nowrap" }}>Success 5-run</th>
                   <th style={{ padding: "0.6rem 0.75rem", fontWeight: 700, whiteSpace: "nowrap" }}>Error</th>
+                  <th style={{ padding: "0.6rem 0.75rem", fontWeight: 700, whiteSpace: "nowrap" }}>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -222,6 +242,11 @@ export default function AdminPage() {
                         {!h.enabled && (
                           <span style={{ marginLeft: "0.35rem", fontSize: "0.65rem", padding: "0.1rem 0.35rem", borderRadius: "9999px", background: "#f3f4f6", color: "var(--muted-foreground)", border: "1px solid var(--border)" }}>
                             disabled
+                          </span>
+                        )}
+                        {h.isDisabled && (
+                          <span style={{ marginLeft: "0.35rem", fontSize: "0.65rem", padding: "0.1rem 0.35rem", borderRadius: "9999px", background: "#fee2e2", color: "#991b1b", border: "1px solid #fecaca", fontWeight: 700 }}>
+                            Disabled
                           </span>
                         )}
                       </td>
@@ -269,6 +294,19 @@ export default function AdminPage() {
                       </td>
                       <td style={{ padding: "0.6rem 0.75rem", maxWidth: "260px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: h.lastError ? "#dc2626" : "var(--muted-foreground)", fontSize: "0.75rem" }} title={h.lastError ?? ""}>
                         {h.lastError ?? "—"}
+                      </td>
+                      <td style={{ padding: "0.6rem 0.75rem", whiteSpace: "nowrap" }}>
+                        {h.isDisabled ? (
+                          <button
+                            onClick={() => handleReEnable(h.sourceId)}
+                            className="btn-outline"
+                            style={{ fontSize: "0.7rem", padding: "0.2rem 0.5rem", borderColor: "#16a34a", color: "#16a34a" }}
+                          >
+                            Re-enable
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: "0.7rem", color: "var(--muted-foreground)" }}>{h.successRate}%</span>
+                        )}
                       </td>
                     </tr>
                   );

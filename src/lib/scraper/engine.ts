@@ -2,6 +2,7 @@ import * as cheerio from "cheerio";
 import type { ScraperSource, ScrapedJobRaw, ScrapeResult, FetchMode } from "./types";
 import { matchChineseKeywords } from "./keywords";
 import { renderPage, closeBrowser } from "./puppeteer";
+import { shouldAutoDisable } from "./health";
 
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -328,13 +329,24 @@ function parseDate(dateStr: string): string {
   return date.toISOString().split("T")[0];
 }
 
-export async function scrapeAllSources(sources: ScraperSource[]): Promise<ScrapeResult[]> {
+export function shouldSkipSource(source: ScraperSource, recentReports: unknown[] = []): boolean {
+  if (!source.enabled) return true;
+  if (recentReports && recentReports.length > 0 && shouldAutoDisable(source.id, recentReports as unknown[])) {
+    return true;
+  }
+  return false;
+}
+
+export async function scrapeAllSources(sources: ScraperSource[], recentReports?: unknown[]): Promise<ScrapeResult[]> {
   const results: ScrapeResult[] = [];
 
   const usesPuppeteer = sources.some((s) => s.enabled && s.jsRendered);
 
   for (const source of sources) {
-    if (!source.enabled) continue;
+    if (shouldSkipSource(source, (recentReports ?? []) as unknown[])) {
+      console.log(`[scraper] skip disabled ${source.id}`);
+      continue;
+    }
     const result = await scrapeSource(source);
     results.push(result);
     await delay(1000 + Math.random() * 2000);

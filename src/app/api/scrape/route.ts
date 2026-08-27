@@ -147,6 +147,92 @@ export async function POST(request: NextRequest) {
   const action = body.action || "scrape-all";
   const sourceId = body.sourceId as string | undefined;
 
+  if (action === "re-enable") {
+    if (!sourceId || typeof sourceId !== "string") {
+      return NextResponse.json({ error: "sourceId required" }, { status: 400 });
+    }
+    const source = getSourceById(sourceId);
+    if (!source) {
+      return NextResponse.json({ error: "Source not found" }, { status: 404 });
+    }
+    const dataStore: "json" | "supabase" = process.env.DATA_STORE === "supabase" ? "supabase" : "json";
+    const timestamp = new Date().toISOString();
+    if (dataStore === "supabase") {
+      try {
+        const { getSupabaseAdmin } = await import("@/lib/db/client");
+        const supabase = getSupabaseAdmin();
+        const { error } = await supabase.from("scrape_reports").insert({
+          mode: "re-enable",
+          total_sources: 1,
+          successful_sources: 1,
+          total_jobs_found: 1,
+          total_jobs_filtered: 1,
+          new_jobs_added: 0,
+          report: { reEnable: sourceId, timestamp },
+          timestamp,
+        } as never);
+        if (error) throw error;
+      } catch (err) {
+        // Fallback to JSON append if Supabase insert fails
+        try {
+          const dummy: ScrapeReport = {
+            timestamp,
+            totalSources: 1,
+            successfulSources: 1,
+            totalJobsFound: 1,
+            totalJobsFiltered: 1,
+            newJobsAdded: 0,
+            results: [
+              {
+                source,
+                jobsFound: 1,
+                jobsFiltered: 1,
+                jobs: [],
+                errors: [],
+                duration: 0,
+              } as unknown as ScrapeReport["results"][number],
+            ],
+          };
+          // include reEnable marker in report JSON for health helpers
+          (dummy as unknown as Record<string, unknown>)["report"] = { reEnable: sourceId, timestamp };
+          saveScrapeReport(dummy);
+        } catch {
+          const message = err instanceof Error ? err.message : String(err);
+          return NextResponse.json({ error: message }, { status: 500 });
+        }
+      }
+    } else {
+      // json fallback: append dummy report
+      const dummy: ScrapeReport = {
+        timestamp,
+        totalSources: 1,
+        successfulSources: 1,
+        totalJobsFound: 1,
+        totalJobsFiltered: 1,
+        newJobsAdded: 0,
+        results: [
+          {
+            source,
+            jobsFound: 1,
+            jobsFiltered: 1,
+            jobs: [],
+            errors: [],
+            duration: 0,
+          } as unknown as ScrapeReport["results"][number],
+        ],
+      };
+      // attach reEnable marker for computeSuccessRate / shouldAutoDisable to recognize
+      const withMarker = { ...dummy, report: { reEnable: sourceId, timestamp } } as unknown as ScrapeReport;
+      // Save using JSON storage; also handle plain object with extra field via direct file append fallback
+      try {
+        saveScrapeReport(withMarker);
+      } catch {
+        saveScrapeReport(dummy);
+      }
+    }
+    return NextResponse.json({ reEnabled: true, sourceId });
+  }
+
   if (action === "clear") {
     clearScrapedJobs();
     return NextResponse.json({ success: true, message: "Scraped jobs cleared" });
