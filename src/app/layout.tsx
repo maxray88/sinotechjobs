@@ -19,6 +19,14 @@ export const metadata: Metadata = {
   title: "SinotechJobs | Tech Careers in DACH for Chinese-Speaking Talent",
   description:
     "Discover AI, robotics, drone, and software engineering positions in Germany, Austria, and Switzerland where Chinese language skills are valued.",
+  alternates: {
+    languages: {
+      en: "https://sinotechjobs.vercel.app?lang=en",
+      zh: "https://sinotechjobs.vercel.app?lang=zh",
+      de: "https://sinotechjobs.vercel.app?lang=de",
+      "x-default": "https://sinotechjobs.vercel.app",
+    },
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
