@@ -1,58 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { scraperSources, getEnabledSources, getSourceById } from "@/lib/scraper/sources";
 import { scrapeAllSources } from "@/lib/scraper/engine";
-import { addScrapedJobs, saveScrapeReport, getStorageStats, clearScrapedJobs, loadScrapeReports } from "@/lib/scraper/storage";
+import {
+  addScrapedJobs,
+  saveScrapeReport,
+  getStorageStats,
+  clearScrapedJobs,
+  loadScrapeReports,
+} from "@/lib/scraper/storage";
 import type { ScrapeReport } from "@/lib/scraper/types";
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const mode = searchParams.get("mode");
+// Admin-only, not for cron — use /api/cron/daily and /api/cron/weekly
+// This route is for the admin dashboard (GET stats, POST scrape/clear).
+// Vercel Cron branches (?mode=daily / ?mode=full) have been moved to
+// src/app/api/cron/* and are authenticated via Bearer CRON_SECRET.
 
-  // Vercel Cron trigger: /api/scrape?mode=daily or /api/scrape?mode=full
-  if (mode === "daily" || mode === "full") {
-    const authHeader = request.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const sources = getEnabledSources();
-    if (sources.length === 0) {
-      return NextResponse.json({ error: "No enabled sources" }, { status: 400 });
-    }
-
-    const results = await scrapeAllSources(sources);
-    const allRawJobs = results.flatMap((r) => r.jobs);
-    const { added, skipped, total } = addScrapedJobs(allRawJobs);
-
-    const report: ScrapeReport = {
-      timestamp: new Date().toISOString(),
-      totalSources: sources.length,
-      successfulSources: results.filter((r) => r.errors.length === 0).length,
-      totalJobsFound: results.reduce((sum, r) => sum + r.jobsFound, 0),
-      totalJobsFiltered: results.reduce((sum, r) => sum + r.jobsFiltered, 0),
-      newJobsAdded: added,
-      results,
-    };
-
-    saveScrapeReport(report);
-
-    return NextResponse.json({
-      success: true,
-      mode,
-      report: {
-        timestamp: report.timestamp,
-        totalSources: report.totalSources,
-        successfulSources: report.successfulSources,
-        totalJobsFound: report.totalJobsFound,
-        totalJobsFiltered: report.totalJobsFiltered,
-        newJobsAdded: report.newJobsAdded,
-        duplicates: skipped,
-        totalJobsInDb: total,
-      },
-    });
-  }
-
+export async function GET() {
   // Default: return stats and sources
   const baseSources = scraperSources.map((s) => ({
     id: s.id,
@@ -170,6 +133,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  // Admin-only, not for cron — use /api/cron/* for scheduled jobs.
+  // No Bearer check here so dashboard buttons work without extra headers.
+  // `clear` could be gated by CRON_SECRET in stricter setups; currently
+  // left open for admin UI (protect via deployment auth/middleware instead).
   const body = await request.json().catch(() => ({}));
   const action = body.action || "scrape-all";
   const sourceId = body.sourceId as string | undefined;
@@ -191,9 +158,12 @@ export async function POST(request: NextRequest) {
   }
 
   if (sources.length === 0) {
-    return NextResponse.json({
-      error: "No enabled sources. Enable sources in the admin panel first.",
-    }, { status: 400 });
+    return NextResponse.json(
+      {
+        error: "No enabled sources. Enable sources in the admin panel first.",
+      },
+      { status: 400 }
+    );
   }
 
   const results = await scrapeAllSources(sources);
