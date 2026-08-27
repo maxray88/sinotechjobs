@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { useLang } from "@/components/LanguageProvider";
 import type { JobField, JobLocation, LanguageLevel, EmploymentType, Job } from "@/lib/types";
 import Link from "next/link";
+import SaveButton from "@/components/SaveButton";
 
 export default function JobsClient({ allJobs }: { allJobs: Job[] }) {
   const { t, lang } = useLang();
@@ -203,7 +204,11 @@ export default function JobsClient({ allJobs }: { allJobs: Job[] }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginTop: "1.5rem" }}>
           {filteredJobs.map((job: Job) => (
-            <Link key={job.id} href={`/jobs/${job.id}`} className="card" style={{ textDecoration: "none", color: "inherit" }}>
+            <div key={job.id} className="card" style={{ position: "relative" }}>
+              <div style={{ position: "absolute", top: "0.75rem", right: "0.75rem", zIndex: 1 }}>
+                <SaveButton jobId={job.id} size="sm" />
+              </div>
+              <Link href={`/jobs/${job.id}`} style={{ textDecoration: "none", color: "inherit", display: "block" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
                 <div style={{ flex: "1", minWidth: "250px" }}>
                   <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", flexWrap: "wrap" }}>
@@ -264,7 +269,8 @@ export default function JobsClient({ allJobs }: { allJobs: Job[] }) {
                   )}
                 </div>
               </div>
-            </Link>
+              </Link>
+            </div>
           ))}
         </div>
       )}

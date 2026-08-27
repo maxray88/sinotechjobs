@@ -2,6 +2,7 @@
 
 import { useLang } from "@/components/LanguageProvider";
 import Link from "next/link";
+import SaveButton from "@/components/SaveButton";
 import type { Job, JobField, EmploymentType } from "@/lib/types";
 
 export default function JobDetailClient({ job }: { job: Job }) {
@@ -87,7 +88,7 @@ export default function JobDetailClient({ job }: { job: Job }) {
           )}
         </div>
 
-        <div style={{ marginTop: "1.5rem" }}>
+        <div style={{ marginTop: "1.5rem", display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
           <a
             href={job.applicationUrl}
             target="_blank"
@@ -97,6 +98,7 @@ export default function JobDetailClient({ job }: { job: Job }) {
           >
             {t.jobs.applyNow} →
           </a>
+          <SaveButton jobId={job.id} size="md" />
         </div>
       </div>
 
