@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/db/client";
 import { postingSchema } from "@/lib/validations/posting";
+import { sendEmail } from "@/lib/email";
 
 // TODO: rate limiting will be added in T3.8
 
@@ -65,6 +66,20 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error("[POST /api/postings] DB error", error);
       return NextResponse.json({ error: "internal" }, { status: 500 });
+    }
+
+    // Fire-and-forget email notification (non-blocking)
+    try {
+      if (user.email) {
+        void sendEmail({
+          to: user.email,
+          locale: "en",
+          template: "posting_submitted",
+          data: { jobTitle: data.job_title, company: data.company },
+        }).catch((err) => console.error("[POST /api/postings] email error", err));
+      }
+    } catch (err) {
+      console.error("[POST /api/postings] email error", err);
     }
 
     return NextResponse.json({ id: inserted.id }, { status: 201 });

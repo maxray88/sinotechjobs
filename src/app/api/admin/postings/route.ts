@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, getProfileRole } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/db/client";
+import { sendEmail } from "@/lib/email";
 
 export async function POST(request: NextRequest) {
   // Auth: require admin role
@@ -140,6 +141,34 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "internal" }, { status: 500 });
       }
 
+      // Fire-and-forget approval email (non-blocking)
+      try {
+        let recipientEmail: string | null = null;
+        try {
+          if (posting.user_id) {
+            const { data: authData } = await getSupabaseAdmin().auth.admin.getUserById(
+              posting.user_id as string
+            );
+            if (authData?.user?.email) recipientEmail = authData.user.email;
+          }
+        } catch {}
+        if (!recipientEmail) {
+          const maybe = posting as Record<string, unknown>;
+          const fallback = maybe["contact_email"] ?? maybe["email"] ?? maybe["applicant_email"];
+          if (typeof fallback === "string" && fallback.includes("@")) recipientEmail = fallback as string;
+        }
+        if (recipientEmail) {
+          void sendEmail({
+            to: recipientEmail,
+            locale: "en",
+            template: "posting_approved",
+            data: { jobTitle: posting.job_title as string, company: posting.company as string, jobId },
+          }).catch((err) => console.error("[POST /api/admin/postings] email error", err));
+        }
+      } catch (err) {
+        console.error("[POST /api/admin/postings] email error", err);
+      }
+
       return NextResponse.json({ ok: true, jobId }, { status: 200 });
     } else {
       // REJECT
@@ -156,6 +185,38 @@ export async function POST(request: NextRequest) {
       if (updateError) {
         console.error("[POST /api/admin/postings] reject update error", updateError);
         return NextResponse.json({ error: "internal" }, { status: 500 });
+      }
+
+      // Fire-and-forget rejection email (non-blocking)
+      try {
+        let recipientEmail: string | null = null;
+        try {
+          if (posting.user_id) {
+            const { data: authData } = await getSupabaseAdmin().auth.admin.getUserById(
+              posting.user_id as string
+            );
+            if (authData?.user?.email) recipientEmail = authData.user.email;
+          }
+        } catch {}
+        if (!recipientEmail) {
+          const maybe = posting as Record<string, unknown>;
+          const fallback = maybe["contact_email"] ?? maybe["email"] ?? maybe["applicant_email"];
+          if (typeof fallback === "string" && fallback.includes("@")) recipientEmail = fallback as string;
+        }
+        if (recipientEmail) {
+          void sendEmail({
+            to: recipientEmail,
+            locale: "en",
+            template: "posting_rejected",
+            data: {
+              jobTitle: posting.job_title as string,
+              company: posting.company as string,
+              reason: trimmedReason,
+            },
+          }).catch((err) => console.error("[POST /api/admin/postings] email error", err));
+        }
+      } catch (err) {
+        console.error("[POST /api/admin/postings] email error", err);
       }
 
       return NextResponse.json({ ok: true }, { status: 200 });
