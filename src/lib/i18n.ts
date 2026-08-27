@@ -140,6 +140,31 @@ export const translations = {
         generic: "Please check your input.",
       },
     },
+    employer: {
+      dashboard: {
+        title: "Employer Dashboard",
+        subtitle: "Manage your postings and track review status",
+        empty: "You haven't posted any jobs yet.",
+        emptyCta: "Post a Job",
+        status: {
+          pending: "Pending",
+          approved: "Approved",
+          rejected: "Rejected",
+        },
+        tier: {
+          free: "Free",
+          featured: "Featured",
+          pinned: "Pinned",
+          enterprise: "Enterprise",
+        },
+        fields: {
+          submittedAt: "Submitted",
+          reason: "Reason",
+        },
+        publishedNote: "Published to job board",
+        viewApplication: "View application link",
+      },
+    },
     footer: {
       rights: "All rights reserved.",
       mission: "Connecting Chinese-speaking tech talent with DACH employers.",
@@ -288,6 +313,31 @@ export const translations = {
         generic: "请检查您的输入。",
       },
     },
+    employer: {
+      dashboard: {
+        title: "雇主控制台",
+        subtitle: "管理您的职位发布并查看审核状态",
+        empty: "您还没有发布任何职位。",
+        emptyCta: "发布职位",
+        status: {
+          pending: "待审核",
+          approved: "已发布",
+          rejected: "已拒绝",
+        },
+        tier: {
+          free: "免费",
+          featured: "精选",
+          pinned: "置顶",
+          enterprise: "企业版",
+        },
+        fields: {
+          submittedAt: "提交时间",
+          reason: "原因",
+        },
+        publishedNote: "已发布到职位看板",
+        viewApplication: "查看申请链接",
+      },
+    },
     footer: {
       rights: "保留所有权利。",
       mission: "连接中文科技人才与德语区雇主。",
@@ -434,6 +484,31 @@ export const translations = {
         urlInvalid: "Bitte geben Sie eine gültige URL ein (z. B. https://...).",
         tierInvalid: "Bitte wählen Sie eine gültige Stufe.",
         generic: "Bitte überprüfen Sie Ihre Eingabe.",
+      },
+    },
+    employer: {
+      dashboard: {
+        title: "Arbeitgeber-Dashboard",
+        subtitle: "Verwalten Sie Ihre Anzeigen und verfolgen Sie den Prüfstatus",
+        empty: "Sie haben noch keine Jobs veröffentlicht.",
+        emptyCta: "Job posten",
+        status: {
+          pending: "Ausstehend",
+          approved: "Freigegeben",
+          rejected: "Abgelehnt",
+        },
+        tier: {
+          free: "Kostenlos",
+          featured: "Hervorgehoben",
+          pinned: "Angeheftet",
+          enterprise: "Enterprise",
+        },
+        fields: {
+          submittedAt: "Eingereicht am",
+          reason: "Grund",
+        },
+        publishedNote: "Auf der Jobbörse veröffentlicht",
+        viewApplication: "Bewerbungslink ansehen",
       },
     },
     footer: {

@@ -4,6 +4,8 @@ import { useLang } from "./LanguageProvider";
 import type { Language } from "@/lib/types";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 const languages: { code: Language; label: string; short: string }[] = [
   { code: "en", label: "English", short: "EN" },
@@ -14,6 +16,35 @@ const languages: { code: Language; label: string; short: string }[] = [
 export default function Navbar() {
   const { lang, setLang, t } = useLang();
   const pathname = usePathname();
+  const [user, setUser] = useState<{ id: string } | null>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    let mounted = true;
+
+    supabase.auth.getUser().then(({ data }) => {
+      if (mounted) {
+        setUser((data.user as unknown as { id: string } | null) ?? null);
+      }
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (mounted) {
+        setUser((session?.user as unknown as { id: string } | null) ?? null);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const dashboardLabel = lang === "zh" ? "控制台" : "Dashboard";
+  const loginLabel = lang === "zh" ? "登录" : lang === "de" ? "Anmelden" : "Login";
+  const logoutLabel = lang === "zh" ? "退出" : lang === "de" ? "Abmelden" : "Logout";
 
   return (
     <header
@@ -79,6 +110,42 @@ export default function Navbar() {
             >
               Admin
             </Link>
+            {user ? (
+              <>
+                <Link
+                  href="/employer/dashboard"
+                  className="nav-link"
+                  style={{ fontWeight: pathname?.startsWith("/employer/dashboard") ? 700 : 500 }}
+                >
+                  {dashboardLabel}
+                </Link>
+                <form action="/auth/logout" method="POST" style={{ display: "inline" }}>
+                  <button
+                    type="submit"
+                    className="nav-link"
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: 0,
+                      fontWeight: 500,
+                      fontSize: "0.875rem",
+                      color: "var(--foreground)",
+                    }}
+                  >
+                    {logoutLabel}
+                  </button>
+                </form>
+              </>
+            ) : (
+              <Link
+                href="/auth/login"
+                className="nav-link"
+                style={{ fontWeight: pathname?.startsWith("/auth/login") ? 700 : 500 }}
+              >
+                {loginLabel}
+              </Link>
+            )}
           </div>
 
           <div
