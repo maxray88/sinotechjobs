@@ -3,10 +3,19 @@ import { getCurrentUser } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/db/client";
 import { postingSchema } from "@/lib/validations/posting";
 import { sendEmail } from "@/lib/email";
-
-// TODO: rate limiting will be added in T3.8
+import { checkRateLimit, getClientIp } from "@/lib/ratelimit";
 
 export async function POST(request: NextRequest) {
+  const ip = getClientIp(request);
+  const { allowed, retryAfterMs } = checkRateLimit(ip, 10, 60_000);
+  if (!allowed) {
+    const retryAfter = Math.ceil((retryAfterMs ?? 0) / 1000);
+    return NextResponse.json(
+      { error: "rate_limited", retryAfter },
+      { status: 429, headers: { "Retry-After": String(retryAfter) } }
+    );
+  }
+
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

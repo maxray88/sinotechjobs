@@ -2,11 +2,21 @@ import "server-only";
 
 import { NextRequest, NextResponse } from "next/server";
 import { subscribeEmail } from "@/lib/db/email-repo";
+import { checkRateLimit, getClientIp } from "@/lib/ratelimit";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(request: NextRequest) {
-  // TODO: add rate limiting (e.g., Upstash Redis) to prevent abuse
+  const ip = getClientIp(request);
+  const { allowed, retryAfterMs } = checkRateLimit(ip, 10, 60_000);
+  if (!allowed) {
+    const retryAfter = Math.ceil((retryAfterMs ?? 0) / 1000);
+    return NextResponse.json(
+      { error: "rate_limited", retryAfter },
+      { status: 429, headers: { "Retry-After": String(retryAfter) } }
+    );
+  }
+
   try {
     let body: unknown;
     try {
