@@ -1,9 +1,7 @@
-import { sampleJobs } from "@/lib/jobs";
-import { loadScrapedJobs } from "@/lib/scraper/storage";
+import { getAllJobs } from "@/lib/all-jobs";
 import JobsClient from "./JobsClient";
 
-export default function JobsPage() {
-  const scraped = loadScrapedJobs();
-  const allJobs = [...sampleJobs, ...scraped];
+export default async function JobsPage() {
+  const allJobs = await getAllJobs();
   return <JobsClient allJobs={allJobs} />;
 }
