@@ -80,6 +80,17 @@ export default function PostJobPage() {
     };
   }, [router]);
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const tierParam = params.get("tier");
+      if (tierParam && ["free", "featured", "pinned", "enterprise"].includes(tierParam)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setForm((prev) => ({ ...prev, tier: tierParam as FormState["tier"] }));
+      }
+    }
+  }, []);
+
   const inputStyle: React.CSSProperties = {
     width: "100%",
     padding: "0.625rem 0.75rem",
@@ -424,6 +435,65 @@ export default function PostJobPage() {
             {errors.application_url && <p style={errorStyle}>{errors.application_url}</p>}
           </div>
 
+          <div>
+            <label style={labelStyle}>{t.post.fields.tier}</label>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                gap: "0.75rem",
+              }}
+            >
+              {(
+                [
+                  { value: "free" as const, label: t.pricing.free.name, price: t.pricing.free.price, per: t.pricing.free.per },
+                  { value: "featured" as const, label: t.pricing.featured.name, price: t.pricing.featured.price, per: t.pricing.featured.per },
+                  { value: "pinned" as const, label: t.pricing.pinned.name, price: t.pricing.pinned.price, per: t.pricing.pinned.per },
+                  { value: "enterprise" as const, label: t.pricing.enterprise.name, price: t.pricing.enterprise.price, per: t.pricing.enterprise.per },
+                ] as const
+              ).map((opt) => {
+                const selected = form.tier === opt.value;
+                const isFeatured = opt.value === "featured";
+                return (
+                  <label
+                    key={opt.value}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.6rem",
+                      padding: "0.75rem 0.85rem",
+                      borderRadius: "0.6rem",
+                      border: `1px solid ${selected ? (isFeatured ? "var(--accent)" : "var(--primary)") : "var(--border)"}`,
+                      background: selected ? "var(--muted)" : "var(--background)",
+                      cursor: "pointer",
+                      fontSize: "0.875rem",
+                      fontWeight: selected ? 600 : 500,
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="tier"
+                      value={opt.value}
+                      checked={selected}
+                      onChange={handleChange("tier")}
+                      style={{ accentColor: "var(--primary)" }}
+                    />
+                    <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+                      <span>{opt.label}</span>
+                      <span style={{ fontSize: "0.75rem", color: "var(--muted-foreground)", fontWeight: 400 }}>
+                        {opt.price} {opt.per ? `· ${opt.per}` : ""}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            <p style={{ fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.375rem" }}>
+              {t.post.tierHint}
+            </p>
+            {errors.tier && <p style={errorStyle}>{errors.tier}</p>}
+          </div>
+
           <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
             <label
               style={{
@@ -461,7 +531,6 @@ export default function PostJobPage() {
 
           {submitError && <p style={{ ...errorStyle, fontSize: "0.875rem" }}>{submitError}</p>}
           {errors.generic && <p style={{ ...errorStyle, fontSize: "0.875rem" }}>{errors.generic}</p>}
-          {errors.tier && <p style={errorStyle}>{errors.tier}</p>}
 
           <button
             type="submit"
