@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+<title id="title">SinotechJobs — Article</title>
+<desc id="desc">Open Graph card 1200x630 — article template, primary #1e3a5f accent #e11d48 muted #f1f5f9</desc>
+<rect width="1200" height="630" fill="#f1f5f9"/>
+<!-- top bar -->
+<rect width="1200" height="72" fill="#1e3a5f"/>
+<circle cx="44" cy="36" r="18" fill="#ffffff"/><text x="44" y="41.5" text-anchor="middle" font-family="Geist, Inter, sans-serif" font-size="14" font-weight="800" fill="#1e3a5f">S</text>
+<text x="70" y="41" font-family="Geist, Inter, sans-serif" font-size="15" font-weight="700" fill="#ffffff">SinotechJobs</text>
+<text x="1156" y="41" text-anchor="end" font-family="Geist, Inter, sans-serif" font-size="10" font-weight="600" fill="#ffffff" opacity="0.85" letter-spacing="0.12em">BLOG • 博客</text>
+<!-- article card -->
+<rect x="90" y="110" width="1020" height="410" rx="16" fill="#ffffff" stroke="#e2e8f0"/>
+<!-- category pill -->
+<rect x="114" y="136" width="108" height="20" rx="10" fill="#e11d48"/><text x="168" y="150" text-anchor="middle" font-family="Geist, Inter, sans-serif" font-size="10" font-weight="700" fill="#ffffff" letter-spacing="0.06em">VISA GUIDE</text>
+<text x="234" y="150" font-family="Geist, Inter, sans-serif" font-size="11" font-weight="500" fill="#64748b">• 8 min read • 2026</text>
+<!-- title -->
+<text x="114" y="190" font-family="Geist, Inter, sans-serif" font-size="30" font-weight="800" fill="#0f172a">DACH Tech Industry Guide</text>
+<text x="114" y="222" font-family="Geist, Inter, sans-serif" font-size="30" font-weight="800" fill="#0f172a">for Chinese Professionals</text>
+<!-- accent divider -->
+<rect x="114" y="240" width="56" height="4" rx="2" fill="#e11d48"/>
+<!-- excerpt -->
+<text x="114" y="270" font-family="Geist, Inter, sans-serif" font-size="13" fill="#334155">Salary benchmarks, Blue Card requirements, and workplace culture —</text>
+<text x="114" y="288" font-family="Geist, Inter, sans-serif" font-size="13" fill="#334155">everything you need to launch your career in Germany.</text>
+<!-- meta -->
+<g font-family="Geist, Inter, sans-serif" font-size="11" fill="#64748b">
+  <circle cx="114" cy="330" r="14" fill="#1e3a5f"/><text x="114" y="334" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff">H</text>
+  <text x="136" y="334" font-weight="600" fill="#1e3a5f">SinotechJobs Editorial</text>
+  <text x="114" y="355" font-size="10">sinotechjobs.vercel.app/blog</text>
+</g>
+<!-- bottom bar -->
+<rect y="616" width="1200" height="14" fill="#e11d48"/>
+</svg>

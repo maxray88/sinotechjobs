@@ -1,0 +1,66 @@
+{
+  "name": "sinotechjobs-og-pipeline",
+  "version": "1.0.0",
+  "description": "ComfyUI workflow for 1200x630 OG cards — home / jobs / article. Brand colors primary #1e3a5f accent #e11d48 muted #f1f5f9. Fallback via satori if ComfyUI unavailable.",
+  "meta": {
+    "canvas": { "width": 1200, "height": 630, "aspect": "1.91:1" },
+    "brand": {
+      "primary": "#1e3a5f",
+      "primaryLight": "#2c5282",
+      "accent": "#e11d48",
+      "accentLight": "#f43f5e",
+      "muted": "#f1f5f9",
+      "foreground": "#0f172a",
+      "background": "#ffffff",
+      "border": "#e2e8f0"
+    },
+    "outputs": [
+      "public/media/og-home.png",
+      "public/media/og-jobs.png",
+      "public/media/og-article.png"
+    ],
+    "fallback": "satori + @resvg/resvg-js (SVG → PNG) or static SVG in public/media/*.svg"
+  },
+  "workflow": {
+    "nodes": [
+      { "id": "1", "type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "realisticVisionV5_v51.safetensors" }, "note": "or any SD1.5/SDXL checkpoint — swap for brand-safe illustration model" },
+      { "id": "2", "type": "CLIPTextEncode", "inputs": { "text": "{{prompt}}", "clip": ["1", 1] } },
+      { "id": "3", "type": "CLIPTextEncode", "inputs": { "text": "blurry, low quality, text artifact, watermark, distorted logo, extra fingers", "clip": ["1", 1] }, "note": "negative prompt" },
+      { "id": "4", "type": "EmptyLatentImage", "inputs": { "width": 1200, "height": 630, "batch_size": 1 } },
+      { "id": "5", "type": "KSampler", "inputs": { "seed": 42, "steps": 28, "cfg": 7, "sampler_name": "dpmpp_2m", "scheduler": "karras", "denoise": 1, "model": ["1", 0], "positive": ["2", 0], "negative": ["3", 0], "latent_image": ["4", 0] } },
+      { "id": "6", "type": "VAEDecode", "inputs": { "samples": ["5", 0], "vae": ["1", 2] } },
+      { "id": "7", "type": "ImageScale", "inputs": { "image": ["6", 0], "width": 1200, "height": 630, "upscale_method": "lanczos", "crop": "center" } },
+      { "id": "8", "type": "SaveImage", "inputs": { "filename_prefix": "og-{{template}}", "images": ["7", 0] }, "note": "outputs to ComfyUI/output; copy to public/media/og-{{template}}.png" },
+      { "id": "9", "type": "Note", "inputs": { "text": "Post-process: overlay SVG text card (satori) for crisp typography — see fallback section in docs/og-pipeline.md" } }
+    ],
+    "edges": [["1:MODEL→5:model"], ["1:CLIP→2:clip"], ["4→5:latent_image"], ["5→6:samples"], ["6→7:image"], ["7→8:images"]]
+  },
+  "templates": {
+    "home": {
+      "file": "public/media/og-home.png",
+      "svgFallback": "public/media/og-home.svg",
+      "prompt": "minimalist dark navy gradient background #1e3a5f to #2c5282, subtle geometric dot grid, central clean white rounded card with soft shadow, modern tech hiring hero for DACH, abstract German skyline silhouette very faint, Chinese calligraphy brush accent subtle, professional, 1200x630, centered composition, safe area 120px margin, no text distortion, corporate branding, accent red #e11d48 bottom bar 14px, high detail, 8k",
+      "negative": "blurry, low quality, text artifact, watermark, distorted logo, extra fingers, cluttered",
+      "overlay": { "method": "satori", "svg": "public/media/og-home.svg", "instruction": "Render SVG text overlay at 1200x630 atop generated background; keep bottom 14px accent bar #e11d48 opaque" }
+    },
+    "jobs": {
+      "file": "public/media/og-jobs.png",
+      "svgFallback": "public/media/og-jobs.svg",
+      "prompt": "clean white background #ffffff, top navy header bar #1e3a5f 96px with thin red underline #e11d48 8px, three minimalist job listing cards with left navy accent 4px, soft shadows, DACH tech jobs theme, icons for AI robotics drone subtle watermark, professional recruitment, 1200x630, grid layout, ample whitespace, accent red #e11d48, corporate, high detail",
+      "negative": "blurry, low quality, text artifact, watermark, distorted logo, cluttered, dark background",
+      "overlay": { "method": "satori", "svg": "public/media/og-jobs.svg" }
+    },
+    "article": {
+      "file": "public/media/og-article.png",
+      "svgFallback": "public/media/og-article.svg",
+      "prompt": "soft muted background #f1f5f9 with gentle vignette, central white article card rounded 16px with subtle border #e2e8f0, editorial tech blog aesthetic, abstract map of DACH region faint watermark behind card, navy top bar #1e3a5f 72px, red category pill #e11d48, professional content marketing, 1200x630, centered, clean typography space, high detail",
+      "negative": "blurry, low quality, text artifact, watermark, distorted logo, noisy background",
+      "overlay": { "method": "satori", "svg": "public/media/og-article.svg" }
+    }
+  },
+  "satoriFallback": {
+    "description": "If ComfyUI not available, render SVGs directly to PNG via satori + resvg or serve SVGs as fallback. SVGs are 1200x630, use brand tokens, Geist font fallback to Inter/system sans.",
+    "command": "npx tsx scripts/generate-og-satori.ts  # optional: renders public/media/*.svg → public/media/*.png via satori",
+    "note": "PNG placeholders in repo are pre-rendered via Node zlib (no deps) with SVG fallbacks for crisp text. Replace with ComfyUI outputs when pipeline is run."
+  }
+}

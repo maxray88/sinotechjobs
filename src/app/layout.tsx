@@ -16,6 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://sinotechjobs.vercel.app"),
   title: "SinotechJobs | Tech Careers in DACH for Chinese-Speaking Talent",
   description:
     "Discover AI, robotics, drone, and software engineering positions in Germany, Austria, and Switzerland where Chinese language skills are valued.",
@@ -26,6 +27,44 @@ export const metadata: Metadata = {
       de: "https://sinotechjobs.vercel.app?lang=de",
       "x-default": "https://sinotechjobs.vercel.app",
     },
+  },
+  openGraph: {
+    type: "website",
+    url: "https://sinotechjobs.vercel.app",
+    siteName: "SinotechJobs",
+    locale: "en_US",
+    alternateLocale: ["zh_CN", "de_DE"],
+    title: "SinotechJobs | Tech Careers in DACH for Chinese-Speaking Talent",
+    description:
+      "Discover AI, robotics, drone, and software engineering positions in Germany, Austria, and Switzerland where Chinese language skills are valued.",
+    images: [
+      {
+        url: "/media/og-home.png",
+        width: 1200,
+        height: 630,
+        alt: "SinotechJobs — Tech Careers in DACH for Chinese-Speaking Talent",
+      },
+      {
+        url: "/media/og-jobs.png",
+        width: 1200,
+        height: 630,
+        alt: "SinotechJobs — Find Your Next Role",
+      },
+      {
+        url: "/media/og-article.png",
+        width: 1200,
+        height: 630,
+        alt: "SinotechJobs — DACH Tech Insights",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    site: "@sinotechjobs",
+    title: "SinotechJobs | Tech Careers in DACH for Chinese-Speaking Talent",
+    description:
+      "Discover AI, robotics, drone, and software engineering positions in Germany, Austria, and Switzerland where Chinese language skills are valued.",
+    images: ["/media/og-home.png"],
   },
 };
 

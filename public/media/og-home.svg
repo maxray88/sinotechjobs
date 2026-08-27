@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+<title id="title">SinotechJobs — Tech Careers in DACH for Chinese-Speaking Talent</title>
+<desc id="desc">Open Graph card 1200x630 — home template, brand colors primary #1e3a5f accent #e11d48</desc>
+<rect width="1200" height="630" fill="#1e3a5f"/>
+<!-- subtle radial highlight -->
+<ellipse cx="600" cy="315" rx="560" ry="320" fill="#2c5282" opacity="0.35"/>
+<!-- top accent dot grid -->
+<g fill="#ffffff" opacity="0.06">
+  <circle cx="40" cy="40" r="2"/><circle cx="80" cy="40" r="2"/><circle cx="120" cy="40" r="2"/><circle cx="160" cy="40" r="2"/><circle cx="200" cy="40" r="2"/><circle cx="240" cy="40" r="2"/><circle cx="280" cy="40" r="2"/><circle cx="320" cy="40" r="2"/>
+</g>
+<!-- card -->
+<rect x="120" y="165" width="960" height="300" rx="16" fill="#ffffff" />
+<rect x="120" y="165" width="960" height="300" rx="16" fill="none" stroke="#335588" stroke-opacity="0.18"/>
+<!-- card header muted -->
+<rect x="120" y="165" width="960" height="28" rx="16" fill="#f8fafc"/>
+<rect x="120" y="185" width="960" height="8" fill="#f8fafc"/>
+<!-- logo mark -->
+<circle cx="170" cy="225" r="22" fill="#1e3a5f"/>
+<text x="170" y="232" text-anchor="middle" font-family="Geist, Inter, sans-serif" font-size="18" font-weight="700" fill="#ffffff">S</text>
+<text x="205" y="230" font-family="Geist, Inter, sans-serif" font-size="16" font-weight="600" fill="#1e3a5f" letter-spacing="0.02em">SinotechJobs</text>
+<!-- main title -->
+<text x="600" y="300" text-anchor="middle" font-family="Geist, Inter, sans-serif" font-size="48" font-weight="800" fill="#0f172a">Tech Careers in DACH</text>
+<text x="600" y="348" text-anchor="middle" font-family="Geist, Inter, sans-serif" font-size="30" font-weight="600" fill="#1e3a5f">for Chinese-Speaking Talent</text>
+<!-- subtitle -->
+<text x="600" y="385" text-anchor="middle" font-family="Geist, Inter, sans-serif" font-size="15" font-weight="500" fill="#64748b">AI • Robotics • Drones • Software • Remote • 中文</text>
+<!-- pills -->
+<g font-family="Geist, Inter, sans-serif" font-size="11" font-weight="700" letter-spacing="0.04em">
+  <rect x="420" y="405" width="84" height="24" rx="12" fill="#e11d48"/><text x="462" y="421" text-anchor="middle" fill="#ffffff">DACH</text>
+  <rect x="514" y="405" width="110" height="24" rx="12" fill="#1e3a5f"/><text x="569" y="421" text-anchor="middle" fill="#ffffff">中文筛选</text>
+  <rect x="634" y="405" width="95" height="24" rx="12" fill="#f1f5f9" stroke="#e2e8f0"/><text x="681.5" y="421" text-anchor="middle" fill="#1e3a5f">VISA SUPPORT</text>
+</g>
+<!-- bottom accent bar -->
+<rect x="0" y="616" width="1200" height="14" fill="#e11d48"/>
+<!-- footer -->
+<text x="600" y="600" text-anchor="middle" font-family="Geist, Inter, sans-serif" font-size="11" fill="#ffffff" opacity="0.85" letter-spacing="0.12em">SINOTECHJOBS.VERCEL.APP</text>
+</svg>
