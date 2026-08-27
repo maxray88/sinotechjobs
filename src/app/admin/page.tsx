@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { scraperSources } from "@/lib/scraper/sources";
 import type { ScrapeReport } from "@/lib/scraper/types";
+import type { HealthEntry } from "@/lib/scraper/health";
 
 interface SourceInfo {
   id: string;
@@ -23,6 +24,7 @@ interface ScrapeResponse {
     error?: string;
   };
   reports?: ScrapeReport[];
+  health?: HealthEntry[];
 }
 
 interface ScrapeReportResponse {
@@ -185,6 +187,94 @@ export default function AdminPage() {
               {stats.lastUpdated ? new Date(stats.lastUpdated).toLocaleDateString() : "—"}
             </div>
             <div style={{ fontSize: "0.75rem", color: "var(--muted-foreground)", textTransform: "uppercase" }}>Last Updated</div>
+          </div>
+        </div>
+      )}
+
+      {/* Crawler Health Matrix */}
+      {data?.health && data.health.length > 0 && (
+        <div style={{ marginBottom: "2rem" }}>
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "1rem" }}>
+            Crawler Health Matrix
+          </h2>
+          <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: "0.5rem" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
+              <thead>
+                <tr style={{ background: "var(--muted)", textAlign: "left", borderBottom: "1px solid var(--border)" }}>
+                  <th style={{ padding: "0.6rem 0.75rem", fontWeight: 700, whiteSpace: "nowrap" }}>Source</th>
+                  <th style={{ padding: "0.6rem 0.75rem", fontWeight: 700, whiteSpace: "nowrap" }}>Type</th>
+                  <th style={{ padding: "0.6rem 0.75rem", fontWeight: 700, whiteSpace: "nowrap" }}>Last</th>
+                  <th style={{ padding: "0.6rem 0.75rem", fontWeight: 700, whiteSpace: "nowrap" }}>Found/Filtered</th>
+                  <th style={{ padding: "0.6rem 0.75rem", fontWeight: 700, whiteSpace: "nowrap" }}>Success 5-run</th>
+                  <th style={{ padding: "0.6rem 0.75rem", fontWeight: 700, whiteSpace: "nowrap" }}>Error</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.health.map((h) => {
+                  const statusColor =
+                    h.lastStatus === "success" ? "#16a34a" : h.lastStatus === "error" ? "#dc2626" : "#9ca3af";
+                  const statusBg =
+                    h.lastStatus === "success" ? "#dcfce7" : h.lastStatus === "error" ? "#fee2e2" : "#f3f4f6";
+                  return (
+                    <tr key={h.sourceId} style={{ borderBottom: "1px solid var(--border)" }}>
+                      <td style={{ padding: "0.6rem 0.75rem", fontWeight: 600, maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={h.sourceName}>
+                        {h.sourceName}
+                        {!h.enabled && (
+                          <span style={{ marginLeft: "0.35rem", fontSize: "0.65rem", padding: "0.1rem 0.35rem", borderRadius: "9999px", background: "#f3f4f6", color: "var(--muted-foreground)", border: "1px solid var(--border)" }}>
+                            disabled
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: "0.6rem 0.75rem", color: "var(--muted-foreground)" }}>{h.type}</td>
+                      <td style={{ padding: "0.6rem 0.75rem" }}>
+                        <span
+                          style={{
+                            display: "inline-block",
+                            padding: "0.15rem 0.5rem",
+                            borderRadius: "9999px",
+                            fontSize: "0.7rem",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.04em",
+                            color: statusColor,
+                            background: statusBg,
+                            border: `1px solid ${statusColor}30`,
+                          }}
+                        >
+                          {h.lastStatus}
+                        </span>
+                        {h.lastRunAt && (
+                          <span style={{ display: "block", fontSize: "0.65rem", color: "var(--muted-foreground)", marginTop: "0.2rem" }}>
+                            {new Date(h.lastRunAt).toLocaleString()}
+                          </span>
+                        )}
+                        {h.avgDurationMs !== null && (
+                          <span style={{ display: "block", fontSize: "0.65rem", color: "var(--muted-foreground)" }}>
+                            avg {(h.avgDurationMs / 1000).toFixed(1)}s
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: "0.6rem 0.75rem", whiteSpace: "nowrap" }}>
+                        {h.lastStatus === "never" ? "—" : `${h.lastJobsFound} / ${h.lastJobsFiltered}`}
+                      </td>
+                      <td style={{ padding: "0.6rem 0.75rem", whiteSpace: "nowrap" }}>
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            color: h.successRate === 100 ? "#16a34a" : h.successRate >= 50 ? "#ca8a04" : h.successRate === 0 && h.lastStatus === "never" ? "var(--muted-foreground)" : "#dc2626",
+                          }}
+                        >
+                          {h.successRate}%
+                        </span>
+                      </td>
+                      <td style={{ padding: "0.6rem 0.75rem", maxWidth: "260px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: h.lastError ? "#dc2626" : "var(--muted-foreground)", fontSize: "0.75rem" }} title={h.lastError ?? ""}>
+                        {h.lastError ?? "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

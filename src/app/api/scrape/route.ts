@@ -9,6 +9,7 @@ import {
   loadScrapeReports,
 } from "@/lib/scraper/storage";
 import type { ScrapeReport } from "@/lib/scraper/types";
+import { buildHealthMatrix } from "@/lib/scraper/health";
 
 // Admin-only, not for cron — use /api/cron/daily and /api/cron/weekly
 // This route is for the admin dashboard (GET stats, POST scrape/clear).
@@ -96,6 +97,7 @@ export async function GET() {
         throw new Error("Failed to fetch job count from Supabase");
       }
 
+      const health = buildHealthMatrix(scraperSources, reports);
       return NextResponse.json({
         sources: baseSources,
         stats: {
@@ -105,6 +107,7 @@ export async function GET() {
           dataStore,
         },
         reports: reports.slice(0, 10),
+        health,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -118,6 +121,7 @@ export async function GET() {
           error: message,
         },
         reports: [],
+        health: buildHealthMatrix(scraperSources, []),
       });
     }
   }
@@ -125,10 +129,12 @@ export async function GET() {
   // json store (default)
   const stats = getStorageStats();
   const reports = loadScrapeReports();
+  const health = buildHealthMatrix(scraperSources, reports);
   return NextResponse.json({
     sources: baseSources,
     stats: { ...stats, dataStore },
     reports: reports.slice(0, 10),
+    health,
   });
 }
 
