@@ -8,22 +8,24 @@
  *   npm run seed
  */
 import { sampleJobs } from "@/lib/jobs";
-import { jobToRow } from "@/lib/db/jobs-repo";
-import { getSupabaseAdmin } from "@/lib/db/client";
+import { jobToRow } from "@/lib/db/mappers";
+import { createClient } from "@supabase/supabase-js";
 import type { JobRow } from "@/lib/db/types";
 
 async function main(): Promise<void> {
   const total = sampleJobs.length;
   console.log(`Seeding ${total} sample jobs...`);
 
-  let supabase: ReturnType<typeof getSupabaseAdmin>;
-  try {
-    supabase = getSupabaseAdmin();
-  } catch (err) {
-    console.error("[seed] Failed to create Supabase admin client:", (err as Error).message);
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !supabaseKey) {
+    console.error("[seed] Failed to create Supabase admin client: Missing Supabase URL or secret key");
     console.error("Ensure SUPABASE env vars are set: NEXT_PUBLIC_SUPABASE_URL / SUPABASE_URL and SUPABASE_SECRET_KEY");
     process.exit(1);
   }
+  const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 
   try {
     const ids = sampleJobs.map((j) => j.id);
