@@ -1,8 +1,8 @@
 # SinotechJobs — Project Handover Document
 
-> **Last updated:** 2026-08-27
-> **Project location:** `~/01_Coding_Projects/05_Sinotech_Jobboard` (macOS) — **GitHub:** `maxray88/sinotechjobs` (public) — **Vercel:** `sinotechjobs.vercel.app` — **Supabase:** `nzlhmjcugibacpbiqtyr`
-> **Status:** Phase 2 done — production READY with Supabase (Postgres), 32 sample jobs seeded
+> **Last updated:** 2026-08-28
+> **Project location:** `~/01_Coding_Projects/05_Sinotech_Jobboard` (macOS) — **GitHub:** `maxray88/sinotechjobs` (public) — **Vercel:** `sinotechjobs.vercel.app` (`cvetqt9ui` READY) — **Supabase:** `nzlhmjcugibacpbiqtyr`
+> **Status:** Phase 5 done — Growth Hardening READY (SEO + sitemap 102 urls + blog + companies + OG + Plausible + health/watchdog), Phases 0–5 complete, Phase 6 WeChat decision-gated
 
 ---
 
