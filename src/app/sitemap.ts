@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { getAllJobs } from "@/lib/all-jobs";
-import { getCompanies, slugifyCompany } from "@/lib/companies";
+import { getCompanies } from "@/lib/companies";
+import { getAllPosts } from "@/lib/blog";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = "https://sinotechjobs.vercel.app";
@@ -24,11 +25,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const companies = await getCompanies();
   const companyEntries: MetadataRoute.Sitemap = companies.map((slug) => ({
-    url: `${base}/companies/${slugifyCompany(slug)}`,
+    url: `${base}/companies/${slug}`,
     lastModified: now,
     changeFrequency: "weekly",
     priority: 0.5,
   }));
 
-  return [...statics, ...jobEntries, ...companyEntries];
+  const blogEntries: MetadataRoute.Sitemap = getAllPosts().map((post) => ({
+    url: `${base}/blog/${post.slug}`,
+    lastModified: new Date(post.date),
+    changeFrequency: "weekly",
+    priority: 0.6,
+  }));
+
+  return [...statics, ...jobEntries, ...companyEntries, ...blogEntries];
 }
