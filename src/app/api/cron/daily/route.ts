@@ -9,6 +9,9 @@ import { sendEmail } from "@/lib/email";
 
 export const maxDuration = 300;
 
+// Tiered quota saving: Monday = full scrape, other days = cheap sources only
+const CHEAP_SOURCE_IDS = ["google-jobs-searchapi", "remoteok-chinese"] as const;
+
 export async function GET(request: NextRequest) {
   // Auth: Vercel Cron automatically sends `authorization: Bearer ${CRON_SECRET}` when CRON_SECRET is set in env.
   // We verify Bearer token strictly. The `x-vercel-cron: 1` header is sent by Vercel but not trusted alone
@@ -24,11 +27,19 @@ export async function GET(request: NextRequest) {
     console.warn("[cron/daily] CRON_SECRET not set — allowing unauthenticated request (dev only)");
   }
 
-  // Rate limiting: no-op — Vercel Cron invokes at most once per schedule (daily).
-  // Auth gate above is sufficient; no in-memory throttle needed. Relies on Vercel edge / cron schedule.
+  // Tiered quota saving: Monday (UTC) scrapes all enabled sources, other days scrape only cheap sources
+  const isMonday = new Date().getUTCDay() === 1;
+  const allEnabled = getEnabledSources();
+  const cheapSet = new Set<string>(CHEAP_SOURCE_IDS as readonly string[]);
+  const sources = isMonday ? allEnabled : allEnabled.filter((s) => cheapSet.has(s.id));
+  const quotaMode = isMonday ? "full" : "cheap";
+  const quotaDetail = isMonday
+    ? `full (Monday) - all ${sources.length} enabled sources`
+    : `cheap (non-Monday) - ${sources.length} sources [${CHEAP_SOURCE_IDS.join(", ")}]`;
+  console.log(`[cron/daily] quota mode=${quotaMode} (${quotaDetail}) day=${new Date().getUTCDay()}`);
 
-  const sources = getEnabledSources();
   if (sources.length === 0) {
+    console.warn(`[cron/daily] no sources after tiered filter (mode=${quotaMode})`);
     return NextResponse.json({ error: "No enabled sources" }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
 
@@ -114,7 +125,7 @@ export async function GET(request: NextRequest) {
       console.warn("[cron/daily] watchdog check failed", watchdogErr);
     }
 
-    return NextResponse.json({ ok: true, mode: "daily", result }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ok: true, mode: quotaMode, result, quotaDetail }, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const errorReport = {
@@ -132,7 +143,7 @@ export async function GET(request: NextRequest) {
       await saveScrapeReportAsync(errorReport);
     } catch {}
 
-    console.error(`[cron/daily] failed`, err);
-    return NextResponse.json({ ok: false, error: message }, { status: 500, headers: { "Cache-Control": "no-store" } });
+    console.error(`[cron/daily] failed (mode=${quotaMode})`, err);
+    return NextResponse.json({ ok: false, error: message, mode: quotaMode }, { status: 500, headers: { "Cache-Control": "no-store" } });
   }
 }
