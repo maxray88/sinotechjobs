@@ -87,11 +87,14 @@ export default function PostJobPage() {
       const tierParam = params.get("tier");
       if (tierParam && ["free", "featured", "pinned", "enterprise"].includes(tierParam)) {
         if (tierParam !== "free") {
-          setTierToast(t.post.comingSoon);
-          window.setTimeout(() => setTierToast(null), 2500);
+          const toastId = window.setTimeout(() => setTierToast(t.post.comingSoon), 0);
+          const clearId = window.setTimeout(() => setTierToast(null), 2500);
+          return () => {
+            window.clearTimeout(toastId);
+            window.clearTimeout(clearId);
+          };
         } else {
-          // eslint-disable-next-line react-hooks/set-state-in-effect
-          setForm((prev) => ({ ...prev, tier: tierParam as FormState["tier"] }));
+          window.setTimeout(() => setForm((prev) => ({ ...prev, tier: tierParam as FormState["tier"] })), 0);
         }
       }
     }
