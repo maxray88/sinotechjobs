@@ -3,9 +3,12 @@ import { scraperSources, getEnabledSources, getSourceById } from "@/lib/scraper/
 import { scrapeAllSources } from "@/lib/scraper/engine";
 import {
   addScrapedJobs,
+  addScrapedJobsAsync,
   saveScrapeReport,
+  saveScrapeReportAsync,
   getStorageStats,
   clearScrapedJobs,
+  clearScrapedJobsAsync,
   loadScrapeReports,
 } from "@/lib/scraper/storage";
 import type { ScrapeReport } from "@/lib/scraper/types";
@@ -234,7 +237,11 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "clear") {
-    clearScrapedJobs();
+    if (process.env.DATA_STORE === "supabase") {
+      await clearScrapedJobsAsync();
+    } else {
+      clearScrapedJobs();
+    }
     return NextResponse.json({ success: true, message: "Scraped jobs cleared" });
   }
 
@@ -261,19 +268,42 @@ export async function POST(request: NextRequest) {
   const results = await scrapeAllSources(sources);
 
   const allRawJobs = results.flatMap((r) => r.jobs);
-  const { added, skipped, total } = addScrapedJobs(allRawJobs);
-
-  const report: ScrapeReport = {
-    timestamp: new Date().toISOString(),
-    totalSources: sources.length,
-    successfulSources: results.filter((r) => r.errors.length === 0).length,
-    totalJobsFound: results.reduce((sum, r) => sum + r.jobsFound, 0),
-    totalJobsFiltered: results.reduce((sum, r) => sum + r.jobsFiltered, 0),
-    newJobsAdded: added,
-    results,
-  };
-
-  saveScrapeReport(report);
+  let added: number;
+  let skipped: number;
+  let total: number;
+  const dataStoreAfterScrape: "json" | "supabase" = process.env.DATA_STORE === "supabase" ? "supabase" : "json";
+  let report: ScrapeReport;
+  if (dataStoreAfterScrape === "supabase") {
+    const res = await addScrapedJobsAsync(allRawJobs);
+    added = res.added;
+    skipped = res.skipped;
+    total = res.total;
+    report = {
+      timestamp: new Date().toISOString(),
+      totalSources: sources.length,
+      successfulSources: results.filter((r) => r.errors.length === 0).length,
+      totalJobsFound: results.reduce((sum, r) => sum + r.jobsFound, 0),
+      totalJobsFiltered: results.reduce((sum, r) => sum + r.jobsFiltered, 0),
+      newJobsAdded: added,
+      results,
+    };
+    await saveScrapeReportAsync(report);
+  } else {
+    const res = addScrapedJobs(allRawJobs);
+    added = res.added;
+    skipped = res.skipped;
+    total = res.total;
+    report = {
+      timestamp: new Date().toISOString(),
+      totalSources: sources.length,
+      successfulSources: results.filter((r) => r.errors.length === 0).length,
+      totalJobsFound: results.reduce((sum, r) => sum + r.jobsFound, 0),
+      totalJobsFiltered: results.reduce((sum, r) => sum + r.jobsFiltered, 0),
+      newJobsAdded: added,
+      results,
+    };
+    saveScrapeReport(report);
+  }
 
   return NextResponse.json({
     success: true,
