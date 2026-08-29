@@ -52,6 +52,7 @@ export default function PostJobPage() {
   const [submitted, setSubmitted] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [tierToast, setTierToast] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,11 +86,16 @@ export default function PostJobPage() {
       const params = new URLSearchParams(window.location.search);
       const tierParam = params.get("tier");
       if (tierParam && ["free", "featured", "pinned", "enterprise"].includes(tierParam)) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setForm((prev) => ({ ...prev, tier: tierParam as FormState["tier"] }));
+        if (tierParam !== "free") {
+          setTierToast(t.post.comingSoon);
+          window.setTimeout(() => setTierToast(null), 2500);
+        } else {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          setForm((prev) => ({ ...prev, tier: tierParam as FormState["tier"] }));
+        }
       }
     }
-  }, []);
+  }, [t.post.comingSoon]);
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
@@ -453,21 +459,33 @@ export default function PostJobPage() {
                 ] as const
               ).map((opt) => {
                 const selected = form.tier === opt.value;
+                const isFree = opt.value === "free";
+                const isPaid = !isFree;
                 const isFeatured = opt.value === "featured";
                 return (
                   <label
                     key={opt.value}
+                    onClick={(e) => {
+                      if (isPaid) {
+                        e.preventDefault();
+                        setTierToast(t.post.comingSoon);
+                        window.setTimeout(() => setTierToast(null), 2500);
+                      }
+                    }}
+                    title={isPaid ? t.post.comingSoon : undefined}
                     style={{
+                      position: "relative",
                       display: "flex",
                       alignItems: "center",
                       gap: "0.6rem",
                       padding: "0.75rem 0.85rem",
                       borderRadius: "0.6rem",
                       border: `1px solid ${selected ? (isFeatured ? "var(--accent)" : "var(--primary)") : "var(--border)"}`,
-                      background: selected ? "var(--muted)" : "var(--background)",
-                      cursor: "pointer",
+                      background: isPaid ? "var(--muted)" : selected ? "var(--muted)" : "var(--background)",
+                      cursor: isPaid ? "not-allowed" : "pointer",
                       fontSize: "0.875rem",
                       fontWeight: selected ? 600 : 500,
+                      opacity: isPaid ? 0.62 : 1,
                     }}
                   >
                     <input
@@ -475,11 +493,39 @@ export default function PostJobPage() {
                       name="tier"
                       value={opt.value}
                       checked={selected}
-                      onChange={handleChange("tier")}
+                      disabled={isPaid}
+                      onChange={(e) => {
+                        if (isPaid) {
+                          e.preventDefault();
+                          setTierToast(t.post.comingSoon);
+                          window.setTimeout(() => setTierToast(null), 2500);
+                          return;
+                        }
+                        handleChange("tier")(e);
+                      }}
                       style={{ accentColor: "var(--primary)" }}
                     />
-                    <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-                      <span>{opt.label}</span>
+                    <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, flex: 1 }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                        {opt.label}
+                        {isPaid && (
+                          <span
+                            style={{
+                              fontSize: "0.62rem",
+                              fontWeight: 700,
+                              letterSpacing: "0.04em",
+                              textTransform: "uppercase",
+                              padding: "0.12rem 0.35rem",
+                              borderRadius: 9999,
+                              background: "var(--border)",
+                              color: "var(--muted-foreground)",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {t.pricing.comingSoon}
+                          </span>
+                        )}
+                      </span>
                       <span style={{ fontSize: "0.75rem", color: "var(--muted-foreground)", fontWeight: 400 }}>
                         {opt.price} {opt.per ? `· ${opt.per}` : ""}
                       </span>
@@ -491,6 +537,24 @@ export default function PostJobPage() {
             <p style={{ fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.375rem" }}>
               {t.post.tierHint}
             </p>
+            {tierToast && (
+              <p
+                role="status"
+                aria-live="polite"
+                style={{
+                  marginTop: "0.5rem",
+                  fontSize: "0.78rem",
+                  fontWeight: 600,
+                  color: "var(--foreground)",
+                  background: "var(--muted)",
+                  border: "1px solid var(--border)",
+                  padding: "0.45rem 0.6rem",
+                  borderRadius: "0.5rem",
+                }}
+              >
+                {tierToast}
+              </p>
+            )}
             {errors.tier && <p style={errorStyle}>{errors.tier}</p>}
           </div>
 

@@ -81,23 +81,48 @@ export default function PricingPage() {
                 </li>
               ))}
             </ul>
-            <Link
-              href={`/post?tier=${tier.id}`}
-              className={tier.highlight ? "btn-accent" : "btn-outline"}
-              style={{
-                display: "block",
-                textAlign: "center",
-                width: "100%",
-                ...(tier.highlight
-                  ? {}
-                  : {
-                      border: "1px solid var(--border)",
-                      background: "var(--background)",
-                    }),
-              }}
-            >
-              {tier.data.cta}
-            </Link>
+            {tier.id === "free" ? (
+              <Link
+                href={`/post?tier=${tier.id}`}
+                className={tier.highlight ? "btn-accent" : "btn-outline"}
+                style={{
+                  display: "block",
+                  textAlign: "center",
+                  width: "100%",
+                  ...(tier.highlight
+                    ? {}
+                    : {
+                        border: "1px solid var(--border)",
+                        background: "var(--background)",
+                      }),
+                }}
+              >
+                {tier.data.cta}
+              </Link>
+            ) : (
+              <button
+                type="button"
+                disabled
+                aria-disabled="true"
+                title={t.pricing.comingSoon}
+                style={{
+                  display: "block",
+                  textAlign: "center",
+                  width: "100%",
+                  padding: "0.625rem 1rem",
+                  borderRadius: "0.5rem",
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  border: "1px solid var(--border)",
+                  background: "var(--muted)",
+                  color: "var(--muted-foreground)",
+                  cursor: "not-allowed",
+                  opacity: 0.7,
+                }}
+              >
+                {t.pricing.comingSoon}
+              </button>
+            )}
           </div>
         ))}
       </div>

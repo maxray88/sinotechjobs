@@ -121,6 +121,7 @@ export const translations = {
       success: "Job submitted! We'll review and publish within 24 hours.",
       free: "Free posting — 30 days, standard placement",
       tierHint: "Choose visibility — Free is standard, Featured and Pinned are paid upgrades, Enterprise is €499/mo for unlimited posts.",
+      comingSoon: "Coming Soon",
       errors: {
         jobTitleRequired: "Job title must be at least 5 characters.",
         jobTitleTooLong: "Job title must be at most 120 characters.",
@@ -145,6 +146,7 @@ export const translations = {
     pricing: {
       title: "Pricing for Employers",
       subtitle: "Choose the right visibility for your hiring needs — from free to enterprise.",
+      comingSoon: "Coming Soon",
       free: {
         name: "Free",
         price: "€0",
@@ -197,6 +199,7 @@ export const translations = {
         },
         publishedNote: "Published to job board",
         viewApplication: "View application link",
+        comingSoon: "Coming Soon",
       },
     },
     admin: {
@@ -411,6 +414,7 @@ export const translations = {
       success: "职位已提交！我们将在24小时内审核并发布。",
       free: "免费发布 — 30天，标准展示",
       tierHint: "选择曝光度 — 免费为标准展示，精选与置顶为付费升级，企业版 €499/月 无限发布。",
+      comingSoon: "即将开放",
       errors: {
         jobTitleRequired: "职位标题至少需要5个字符。",
         jobTitleTooLong: "职位标题最多120个字符。",
@@ -435,6 +439,7 @@ export const translations = {
     pricing: {
       title: "企业定价",
       subtitle: "为您的招聘选择合适的曝光度 — 从免费到企业版。",
+      comingSoon: "即将开放",
       free: {
         name: "免费",
         price: "€0",
@@ -487,6 +492,7 @@ export const translations = {
         },
         publishedNote: "已发布到职位看板",
         viewApplication: "查看申请链接",
+        comingSoon: "即将开放",
       },
     },
     admin: {
@@ -701,6 +707,7 @@ export const translations = {
       success: "Job eingereicht! Wir prüfen und veröffentlichen innerhalb von 24 Stunden.",
       free: "Kostenlose Anzeige — 30 Tage, Standard-Platzierung",
       tierHint: "Wählen Sie die Sichtbarkeit — Kostenlos ist Standard, Featured und Pinned sind kostenpflichtige Upgrades, Enterprise €499/Monat für unbegrenzte Anzeigen.",
+      comingSoon: "Bald verfügbar",
       errors: {
         jobTitleRequired: "Stellentitel muss mindestens 5 Zeichen lang sein.",
         jobTitleTooLong: "Stellentitel darf maximal 120 Zeichen lang sein.",
@@ -725,6 +732,7 @@ export const translations = {
     pricing: {
       title: "Preise für Arbeitgeber",
       subtitle: "Wählen Sie die passende Sichtbarkeit für Ihr Hiring — von kostenlos bis Enterprise.",
+      comingSoon: "Bald verfügbar",
       free: {
         name: "Kostenlos",
         price: "€0",
@@ -777,6 +785,7 @@ export const translations = {
         },
         publishedNote: "Auf der Jobbörse veröffentlicht",
         viewApplication: "Bewerbungslink ansehen",
+        comingSoon: "Bald verfügbar",
       },
     },
     admin: {
