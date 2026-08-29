@@ -151,10 +151,22 @@ export async function upsertJobs(jobs: Job[]): Promise<{ added: number }> {
     }
   }
 
-  const toInsert = jobs.filter((j) => {
+  const toInsertRaw = jobs.filter((j) => {
     const url = (j as any).sourceUrl ?? j.applicationUrl;
     return !existingSet.has(url);
   });
+
+  if (toInsertRaw.length === 0) return { added: 0 };
+
+  // Deduplicate within batch by source_url to avoid ON CONFLICT duplicate in same command
+  const seen = new Set<string>();
+  const toInsert: Job[] = [];
+  for (const j of toInsertRaw) {
+    const url = (j as any).sourceUrl ?? j.applicationUrl;
+    if (url && seen.has(url)) continue;
+    if (url) seen.add(url);
+    toInsert.push(j);
+  }
 
   if (toInsert.length === 0) return { added: 0 };
 
