@@ -46,7 +46,7 @@ export const scraperSources: ScraperSource[] = [
     nameZh: "博世招聘 - 中国/AI",
     type: "html",
     url: "https://www.bosch.de/de/karriere/job-suche/?country=DE&keyword=chinese",
-    enabled: false,
+    enabled: true,
     jsRendered: true,
     puppeteerOptions: {
       waitForSelector: ".job-item, .job-result, .posting",
@@ -122,7 +122,7 @@ export const scraperSources: ScraperSource[] = [
     nameZh: "SAP 招聘 - 中文",
     type: "html",
     url: "https://jobs.sap.com/search/?q=chinese&locationsearch=Germany",
-    enabled: false,
+    enabled: true,
     keywords: ["chinese", "chinesisch", "mandarin", "china"],
     selectors: {
       jobCard: ".job-result, .search-result",
@@ -141,7 +141,7 @@ export const scraperSources: ScraperSource[] = [
     nameZh: "华为欧洲招聘",
     type: "html",
     url: "https://career.huawei.com/reccampportal/portal5/campus-recruitment.html?jobType=2&language=en",
-    enabled: false,
+    enabled: true,
     jsRendered: true,
     puppeteerOptions: {
       waitForSelector: ".job-item, .position-item",
@@ -166,7 +166,7 @@ export const scraperSources: ScraperSource[] = [
     nameZh: "德国人工智能研究中心",
     type: "html",
     url: "https://www.dfki.de/en/jobs-and-careers/",
-    enabled: false,
+    enabled: true,
     keywords: ["chinese", "china", "ai", "machine learning", "robotics"],
     selectors: {
       jobCard: ".job-item, .vacancy, .position",
@@ -185,7 +185,7 @@ export const scraperSources: ScraperSource[] = [
     nameZh: "弗劳恩霍夫 - AI/机器人",
     type: "html",
     url: "https://www.fraunhofer.de/en/jobs.html",
-    enabled: false,
+    enabled: true,
     keywords: ["chinese", "china", "ai", "robotics", "machine learning"],
     selectors: {
       jobCard: ".job-item, .vacancy, .search-result",
@@ -204,7 +204,7 @@ export const scraperSources: ScraperSource[] = [
     nameZh: "在德国工作 - IT/中文",
     type: "html",
     url: "https://www.make-it-in-germany.com/en/working-in-germany/job-listings",
-    enabled: false,
+    enabled: true,
     keywords: ["chinese", "chinesisch", "ai", "robotics", "software"],
     selectors: {
       jobCard: ".job-item, .job-result",
@@ -222,7 +222,7 @@ export const scraperSources: ScraperSource[] = [
     nameZh: "机器学习职位德国",
     type: "html",
     url: "https://machinelearningjobs.de/jobs/",
-    enabled: false,
+    enabled: true,
     keywords: ["chinese", "chinesisch", "mandarin", "china"],
     selectors: {
       jobCard: ".job-listing, .job-card, article",
@@ -253,7 +253,7 @@ export const scraperSources: ScraperSource[] = [
     nameZh: "无人机职位德国",
     type: "html",
     url: "https://www.dronejobs.de/jobs/",
-    enabled: false,
+    enabled: true,
     keywords: ["chinese", "chinesisch", "china"],
     selectors: {
       jobCard: ".job-item, .job-card, article",
