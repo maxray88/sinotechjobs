@@ -2,7 +2,7 @@ import type { ScraperSource } from "./types";
 
 export const scraperSources: ScraperSource[] = [
   {
-    // scrapingApi not needed — RSS direct fetch sufficient
+    scrapingApi: true,
     id: "stepstone-chinese-de",
     name: "StepStone DE - Chinese Keyword",
     nameZh: "StepStone 德国 - 中文关键词",
@@ -14,7 +14,7 @@ export const scraperSources: ScraperSource[] = [
     defaultLocationCode: "de",
   },
   {
-    // scrapingApi not enabled — puppeteer/direct sufficient for this source
+    scrapingApi: true,
     id: "indeed-chinese-de",
     name: "Indeed DE - Chinese Keyword",
     nameZh: "Indeed 德国 - 中文关键词",
@@ -39,8 +39,8 @@ export const scraperSources: ScraperSource[] = [
     },
     defaultLocationCode: "de",
   },
-  // scrapingApi not enabled — direct/puppeteer sufficient for this source
   {
+    scrapingApi: true,
     id: "bosch-careers-china",
     name: "Bosch Careers - China/AI",
     nameZh: "博世招聘 - 中国/AI",
@@ -134,8 +134,8 @@ export const scraperSources: ScraperSource[] = [
     defaultField: "cs",
     defaultLocationCode: "de",
   },
-  // scrapingApi not enabled — direct/puppeteer sufficient for this source
   {
+    scrapingApi: true,
     id: "huawei-europe-china",
     name: "Huawei Europe Careers",
     nameZh: "华为欧洲招聘",
@@ -159,8 +159,8 @@ export const scraperSources: ScraperSource[] = [
     },
     defaultLocationCode: "de",
   },
-  // scrapingApi not enabled — direct/puppeteer sufficient for this source
   {
+    scrapingApi: true,
     id: "dfki-ai-china",
     name: "DFKI - AI Research",
     nameZh: "德国人工智能研究中心",
@@ -178,8 +178,8 @@ export const scraperSources: ScraperSource[] = [
     defaultField: "ai",
     defaultLocationCode: "de",
   },
-  // scrapingApi not enabled — direct/puppeteer sufficient for this source
   {
+    scrapingApi: true,
     id: "fraunhofer-ai-china",
     name: "Fraunhofer - AI/Robotics",
     nameZh: "弗劳恩霍夫 - AI/机器人",
@@ -215,8 +215,8 @@ export const scraperSources: ScraperSource[] = [
     },
     defaultLocationCode: "de",
   },
-  // scrapingApi not enabled — direct/puppeteer sufficient for this source
   {
+    scrapingApi: true,
     id: "machinelearningjobs-de",
     name: "MachineLearningJobs.de",
     nameZh: "机器学习职位德国",
@@ -246,8 +246,8 @@ export const scraperSources: ScraperSource[] = [
     defaultField: "remote",
     defaultLocationCode: "remote",
   },
-  // scrapingApi not enabled — direct/puppeteer sufficient for this source
   {
+    scrapingApi: true,
     id: "dronejobs-de",
     name: "DroneJobs.de",
     nameZh: "无人机职位德国",
