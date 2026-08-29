@@ -265,6 +265,16 @@ export const scraperSources: ScraperSource[] = [
     defaultField: "drone",
     defaultLocationCode: "de",
   },
+  {
+    id: "google-jobs-searchapi",
+    name: "Google Jobs via SearchAPI",
+    nameZh: "Google 职位 - SearchAPI",
+    type: "json-api",
+    url: "https://www.searchapi.io/api/v1/search",
+    enabled: true,
+    keywords: ["chinesisch", "chinese", "mandarin"],
+    defaultLocationCode: "de",
+  },
 ];
 
 export function getEnabledSources(): ScraperSource[] {

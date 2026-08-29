@@ -80,6 +80,178 @@ export async function fetchViaScrapingAPI(url: string): Promise<string> {
 export async function scrapeSource(source: ScraperSource): Promise<ScrapeResult> {
   const startTime = Date.now();
   const errors: string[] = [];
+
+  // Special handling: Google Jobs via searchapi.io (engine=google_jobs with fallback engine=google)
+  if (source.id === "google-jobs-searchapi") {
+    const apiKey = process.env.SEARCHAPI_KEY || process.env.SEARCH_API_KEY;
+    if (!apiKey) {
+      errors.push("SEARCHAPI_KEY / SEARCH_API_KEY missing — set SEARCHAPI_KEY env var for searchapi.io");
+      return {
+        source,
+        jobsFound: 0,
+        jobsFiltered: 0,
+        jobs: [],
+        errors,
+        duration: Date.now() - startTime,
+        fetchMode: "direct",
+      };
+    }
+
+    const buildUrl = (engine: string) =>
+      `https://www.searchapi.io/api/v1/search?engine=${encodeURIComponent(engine)}&q=${encodeURIComponent("chinesisch jobs Germany")}&location=${encodeURIComponent("Germany")}&hl=de&gl=de&api_key=${encodeURIComponent(apiKey)}`;
+
+    let rawJson: string | null = null;
+    const fetchMode: FetchMode = "direct";
+    let lastError: string | null = null;
+
+    const tryFetch = async (engine: string): Promise<string | null> => {
+      const url = buildUrl(engine);
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+        const text = await res.text();
+        if (!res.ok) {
+          lastError = `SearchAPI ${engine} HTTP ${res.status}: ${text.slice(0, 500)}`;
+          return null;
+        }
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed.error) {
+            const errMsg = typeof parsed.error === "string" ? parsed.error : JSON.stringify(parsed.error);
+            lastError = `SearchAPI ${engine} error: ${errMsg}`;
+            // trigger fallback on engine param errors
+            return null;
+          }
+        } catch {
+          // ignore JSON parse check, keep text
+        }
+        return text;
+      } catch (e) {
+        lastError = `SearchAPI ${engine} fetch failed: ${e instanceof Error ? e.message : String(e)}`;
+        return null;
+      }
+    };
+
+    rawJson = await tryFetch("google_jobs");
+    if (!rawJson) {
+      console.warn(`[scraper] google-jobs-searchapi engine=google_jobs failed (${lastError}), trying fallback engine=google`);
+      const fallback = await tryFetch("google");
+      if (fallback) rawJson = fallback;
+    }
+
+    if (!rawJson) {
+      if (lastError) errors.push(lastError);
+      if (errors.length === 0) errors.push("Failed to fetch from SearchAPI (both engines)");
+      return {
+        source,
+        jobsFound: 0,
+        jobsFiltered: 0,
+        jobs: [],
+        errors,
+        duration: Date.now() - startTime,
+        fetchMode,
+      };
+    }
+
+    const jobs: ScrapedJobRaw[] = [];
+    try {
+      const data = JSON.parse(rawJson);
+      const list: unknown[] = Array.isArray((data as Record<string, unknown>).jobs_results)
+        ? ((data as Record<string, unknown>).jobs_results as unknown[])
+        : Array.isArray((data as Record<string, unknown>).jobs)
+          ? ((data as Record<string, unknown>).jobs as unknown[])
+          : Array.isArray((data as Record<string, unknown>).results)
+            ? ((data as Record<string, unknown>).results as unknown[])
+            : Array.isArray((data as Record<string, unknown>).organic_results)
+              ? ((data as Record<string, unknown>).organic_results as unknown[])
+              : [];
+
+      for (const item of list) {
+        if (typeof item !== "object" || item === null) continue;
+        const rec = item as Record<string, unknown>;
+        const title = (rec.title as string) || (rec.job_title as string) || (rec.position as string) || "";
+        const company =
+          (rec.company_name as string) ||
+          (rec.company as string) ||
+          (rec.via as string) ||
+          (rec.source as string) ||
+          "";
+        const location =
+          (rec.location as string) ||
+          (rec.city as string) ||
+          (rec.place as string) ||
+          "Germany";
+        let url = "";
+        if (typeof rec.share_link === "string" && rec.share_link) url = rec.share_link;
+        else if (typeof rec.link === "string" && rec.link) url = rec.link;
+        else if (typeof rec.job_link === "string" && rec.job_link) url = rec.job_link;
+        else if (typeof rec.url === "string" && rec.url) url = rec.url;
+        else if (Array.isArray(rec.apply_options) && rec.apply_options.length > 0) {
+          const first = rec.apply_options[0] as Record<string, unknown>;
+          if (typeof first?.link === "string") url = first.link as string;
+        }
+        if (!url) url = source.url;
+
+        const descriptionRaw =
+          (rec.description as string) ||
+          (rec.snippet as string) ||
+          (rec.summary as string) ||
+          "";
+
+        let extText = "";
+        if (Array.isArray(rec.extensions)) extText = (rec.extensions as string[]).join(" ");
+        else if (rec.detected_extensions && typeof rec.detected_extensions === "object") {
+          const de = rec.detected_extensions as Record<string, unknown>;
+          extText = Object.values(de)
+            .filter((v) => typeof v === "string")
+            .join(" ");
+        }
+
+        const description = String(descriptionRaw || extText).substring(0, 2000);
+
+        let postedDateRaw = "";
+        if (typeof rec.posted_at === "string") postedDateRaw = rec.posted_at as string;
+        else if (typeof rec.date === "string") postedDateRaw = rec.date as string;
+        else if (typeof rec.created_at === "string") postedDateRaw = rec.created_at as string;
+        else {
+          const de2 = rec.detected_extensions as Record<string, unknown> | undefined;
+          if (de2 && typeof de2.posted_at === "string") postedDateRaw = de2.posted_at as string;
+        }
+
+        if (title && url) {
+          jobs.push({
+            title: String(title).trim(),
+            company: String(company).trim() || extractCompanyFromSource(source),
+            location: String(location).trim() || "Germany",
+            url: String(url).trim(),
+            description: String(description).trim().substring(0, 2000),
+            postedDate: parseDate(String(postedDateRaw || "")),
+            sourceId: source.id,
+            sourceName: source.name,
+          });
+        }
+      }
+    } catch (e) {
+      errors.push(`Failed to parse SearchAPI response: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
+    const filtered = jobs.filter((job) => {
+      const fullText = `${job.title} ${job.company} ${job.location} ${job.description ?? ""}`;
+      return matchChineseKeywords(fullText).matched;
+    });
+
+    console.log(`[scraper] ${source.id} fetchMode=${fetchMode} jobsFound=${jobs.length} jobsFiltered=${filtered.length}`);
+
+    return {
+      source,
+      jobsFound: jobs.length,
+      jobsFiltered: filtered.length,
+      jobs: filtered,
+      errors,
+      duration: Date.now() - startTime,
+      fetchMode,
+    };
+  }
+
   const { html, fetchMode } = await fetchWithFallback(source, errors);
 
   // Ensure fetchMode logging for direct when html came from scraping-api/puppeteer? Already handled.
