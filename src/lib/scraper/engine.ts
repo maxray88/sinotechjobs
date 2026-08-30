@@ -63,7 +63,7 @@ export async function fetchViaScrapingAPI(url: string): Promise<string> {
   const provider = (process.env.SCRAPING_API_PROVIDER || "scrapingbee").toLowerCase();
   if (!key) throw new Error("SCRAPING_API_KEY missing");
   if (provider === "scrapingbee") {
-    const apiUrl = `https://app.scrapingbee.com/api/v1/?api_key=${encodeURIComponent(key)}&url=${encodeURIComponent(url)}&render_js=false`;
+    const apiUrl = `https://app.scrapingbee.com/api/v1/?api_key=${encodeURIComponent(key)}&url=${encodeURIComponent(url)}&render_js=true&premium_proxy=true&country_code=de`;
     const res = await fetch(apiUrl);
     if (!res.ok) throw new Error(`ScrapingBee ${res.status}`);
     return res.text();
