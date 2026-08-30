@@ -94,6 +94,10 @@ export const translations = {
       remoteOnly: "Remote only",
       featured: "Featured",
       noResults: "No jobs found. Try adjusting your filters.",
+      emptyLiveCTA: {
+        title: "No live jobs yet — Be the first to post",
+        cta: "Post for free",
+      },
       posted: "Posted",
       applyNow: "Apply Now",
       requirements: "Requirements",
@@ -392,6 +396,10 @@ export const translations = {
       remoteOnly: "仅显示远程",
       featured: "推荐",
       noResults: "未找到匹配职位，请调整筛选条件。",
+      emptyLiveCTA: {
+        title: "暂无实时岗位 — 成为首个发布者",
+        cta: "免费发布",
+      },
       posted: "发布于",
       applyNow: "立即申请",
       requirements: "职位要求",
@@ -690,6 +698,10 @@ export const translations = {
       remoteOnly: "Nur Remote",
       featured: "Empfohlen",
       noResults: "Keine Jobs gefunden. Filter anpassen.",
+      emptyLiveCTA: {
+        title: "Noch keine Live-Jobs — Erste Stelle kostenlos posten",
+        cta: "Kostenlos posten",
+      },
       posted: "Veröffentlicht",
       applyNow: "Jetzt bewerben",
       requirements: "Anforderungen",

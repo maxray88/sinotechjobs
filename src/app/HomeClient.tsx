@@ -120,14 +120,30 @@ export default function HomeClient({ allJobs }: { allJobs: Job[] }) {
             <h2 style={{ fontSize: "1.5rem", fontWeight: 700 }}>
               {lang === "zh" ? "推荐职位" : lang === "de" ? "Empfohlene Jobs" : "Featured Jobs"}
             </h2>
-            <p style={{ fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.25rem", maxWidth: "520px", lineHeight: 1.5 }}>{t.jobs.sampleBanner.subtitle}</p>
           </div>
           <Link href="/jobs" className="btn-outline">
             {lang === "zh" ? "查看全部 →" : lang === "de" ? "Alle ansehen →" : "View All →"}
           </Link>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "1rem" }}>
-          {featured.map((job) => (
+        {featured.length === 0 ? (
+          <div
+            style={{
+              textAlign: "center",
+              padding: "2.5rem 1rem",
+              border: "2px dashed var(--border)",
+              borderRadius: "0.75rem",
+              background: "var(--muted)",
+            }}
+          >
+            <p style={{ fontSize: "1.0625rem", fontWeight: 700, marginBottom: "0.5rem" }}>{t.jobs.emptyLiveCTA.title}</p>
+            <p style={{ fontSize: "0.875rem", color: "var(--muted-foreground)", marginBottom: "1.25rem" }}>{t.jobs.noResults}</p>
+            <Link href="/post" className="btn-primary" style={{ display: "inline-block", textDecoration: "none" }}>
+              {t.jobs.emptyLiveCTA.cta}
+            </Link>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "1rem" }}>
+            {featured.map((job) => (
               <Link key={job.id} href={`/jobs/${job.id}`} className="card" style={{ textDecoration: "none", color: "inherit" }}>
                 <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", flexWrap: "wrap" }}>
                   {job.featured && <span className="badge-featured">{t.jobs.featured}</span>}
@@ -147,7 +163,8 @@ export default function HomeClient({ allJobs }: { allJobs: Job[] }) {
                 </div>
               </Link>
             ))}
-        </div>
+          </div>
+        )}
       </section>
 
       {/* Email Capture */}
