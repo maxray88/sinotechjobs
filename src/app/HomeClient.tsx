@@ -10,6 +10,7 @@ export default function HomeClient({ allJobs }: { allJobs: Job[] }) {
   const jobCount = allJobs.length;
   const companyCount = new Set(allJobs.map((j) => j.company)).size;
   const locationCount = new Set(allJobs.map((j) => j.locationCode)).size;
+  const featured = [...allJobs].sort((a,b)=> (b.id.startsWith('scraped-')?1:0) - (a.id.startsWith('scraped-')?1:0)).filter(j=>j.featured || j.id.startsWith('scraped-')).slice(0,3);
 
   return (
     <div>
@@ -126,10 +127,7 @@ export default function HomeClient({ allJobs }: { allJobs: Job[] }) {
           </Link>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "1rem" }}>
-          {allJobs
-            .filter((j) => j.featured)
-            .slice(0, 3)
-            .map((job) => (
+          {featured.map((job) => (
               <Link key={job.id} href={`/jobs/${job.id}`} className="card" style={{ textDecoration: "none", color: "inherit" }}>
                 <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", flexWrap: "wrap" }}>
                   {job.featured && <span className="badge-featured">{t.jobs.featured}</span>}
