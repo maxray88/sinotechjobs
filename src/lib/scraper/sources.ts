@@ -9,7 +9,7 @@ export const scraperSources: ScraperSource[] = [
     type: "rss",
     url: "https://www.stepstone.de/jobs/chinesisch/in-deutschland/rss",
     enabled: true,
-    keywords: ["chinesisch", "chinese", "mandarin", "中文"],
+    keywords: ["chinesisch", "chinese", "mandarin", "中文", "china", "china market", "chinese speaking"],
     defaultField: undefined,
     defaultLocationCode: "de",
   },
@@ -28,7 +28,7 @@ export const scraperSources: ScraperSource[] = [
       scrollDelay: 2000,
       extraWaitMs: 3000,
     },
-    keywords: ["chinesisch", "chinese", "mandarin", "中文"],
+    keywords: ["chinesisch", "chinese", "mandarin", "中文", "china", "china market", "chinese speaking"],
     selectors: {
       jobCard: ".job_seen_bea, .result, [data-jk]",
       title: "h2.jobTitle a, h2 a span, [data-jk] h2 a",
@@ -54,7 +54,7 @@ export const scraperSources: ScraperSource[] = [
       scrollDelay: 2000,
       extraWaitMs: 2000,
     },
-    keywords: ["chinese", "chinesisch", "china", "mandarin"],
+    keywords: ["chinese", "chinesisch", "china", "mandarin", "china market", "chinese speaking"],
     selectors: {
       jobCard: ".job-item, .job-result, .posting",
       title: ".job-title, h3, h2",
@@ -80,7 +80,7 @@ export const scraperSources: ScraperSource[] = [
       scrollDelay: 3000,
       extraWaitMs: 3000,
     },
-    keywords: ["chinese", "chinesisch", "mandarin", "中文"],
+    keywords: ["chinese", "chinesisch", "mandarin", "中文", "china", "china market", "chinese speaking"],
     selectors: {
       jobCard: ".jobs-search__results-list li, .job-search-card",
       title: ".base-search-card__title",
@@ -105,7 +105,7 @@ export const scraperSources: ScraperSource[] = [
       scrollDelay: 2000,
       extraWaitMs: 2000,
     },
-    keywords: ["chinesisch", "chinese", "mandarin"],
+    keywords: ["chinesisch", "chinese", "mandarin", "china", "china market", "chinese speaking"],
     selectors: {
       jobCard: "[data-testid='job-posting-card'], .job-posting",
       title: "h3 a, h4 a, [data-testid='job-title']",
@@ -123,7 +123,7 @@ export const scraperSources: ScraperSource[] = [
     type: "html",
     url: "https://jobs.sap.com/search/?q=chinese&locationsearch=Germany",
     enabled: true,
-    keywords: ["chinese", "chinesisch", "mandarin", "china"],
+    keywords: ["chinese", "chinesisch", "mandarin", "china", "china market", "chinese speaking"],
     selectors: {
       jobCard: ".job-result, .search-result",
       title: ".job-title, h3 a",
@@ -149,7 +149,7 @@ export const scraperSources: ScraperSource[] = [
       scrollDelay: 3000,
       extraWaitMs: 3000,
     },
-    keywords: ["chinese", "mandarin", "中文", "china"],
+    keywords: ["chinese", "mandarin", "中文", "china", "china market", "chinese speaking"],
     selectors: {
       jobCard: ".job-item, .position-item",
       title: ".job-title, .position-name",
@@ -167,7 +167,7 @@ export const scraperSources: ScraperSource[] = [
     type: "html",
     url: "https://www.dfki.de/en/jobs-and-careers/",
     enabled: true,
-    keywords: ["chinese", "china", "ai", "machine learning", "robotics"],
+    keywords: ["chinese", "china", "ai", "machine learning", "robotics", "china market", "chinese speaking"],
     selectors: {
       jobCard: ".job-item, .vacancy, .position",
       title: "h3, h4, .job-title",
@@ -186,7 +186,7 @@ export const scraperSources: ScraperSource[] = [
     type: "html",
     url: "https://www.fraunhofer.de/en/jobs.html",
     enabled: true,
-    keywords: ["chinese", "china", "ai", "robotics", "machine learning"],
+    keywords: ["chinese", "china", "ai", "robotics", "machine learning", "china market", "chinese speaking"],
     selectors: {
       jobCard: ".job-item, .vacancy, .search-result",
       title: "h3 a, h4 a, .job-title",
@@ -205,7 +205,7 @@ export const scraperSources: ScraperSource[] = [
     type: "html",
     url: "https://www.make-it-in-germany.com/en/working-in-germany/job-listings",
     enabled: true,
-    keywords: ["chinese", "chinesisch", "ai", "robotics", "software"],
+    keywords: ["chinese", "chinesisch", "ai", "robotics", "software", "china", "china market", "chinese speaking"],
     selectors: {
       jobCard: ".job-item, .job-result",
       title: "h3 a, h4 a, .job-title",
@@ -223,7 +223,7 @@ export const scraperSources: ScraperSource[] = [
     type: "html",
     url: "https://machinelearningjobs.de/jobs/",
     enabled: true,
-    keywords: ["chinese", "chinesisch", "mandarin", "china"],
+    keywords: ["chinese", "chinesisch", "mandarin", "china", "china market", "chinese speaking"],
     selectors: {
       jobCard: ".job-listing, .job-card, article",
       title: "h2 a, h3 a, .job-title",
@@ -242,7 +242,7 @@ export const scraperSources: ScraperSource[] = [
     type: "json-api",
     url: "https://remoteok.com/api?tags=chinese",
     enabled: true,
-    keywords: ["chinese", "mandarin", "中文"],
+    keywords: ["chinese", "mandarin", "中文", "china", "china market", "chinese speaking"],
     defaultField: "remote",
     defaultLocationCode: "remote",
   },
@@ -254,7 +254,7 @@ export const scraperSources: ScraperSource[] = [
     type: "html",
     url: "https://www.dronejobs.de/jobs/",
     enabled: true,
-    keywords: ["chinese", "chinesisch", "china"],
+    keywords: ["chinese", "chinesisch", "china", "china market", "chinese speaking"],
     selectors: {
       jobCard: ".job-item, .job-card, article",
       title: "h2 a, h3 a, .job-title",
@@ -272,7 +272,7 @@ export const scraperSources: ScraperSource[] = [
     type: "json-api",
     url: "https://www.searchapi.io/api/v1/search",
     enabled: true,
-    keywords: ["chinesisch", "chinese", "mandarin"],
+    keywords: ["chinesisch", "chinese", "mandarin", "china", "china market", "chinese speaking"],
     defaultLocationCode: "de",
   },
 ];
