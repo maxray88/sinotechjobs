@@ -1,5 +1,9 @@
-// Seed source for Supabase — not used at runtime when DATA_STORE=supabase except via seed script
+// Deprecated sample/demo jobs — kept for seed script reference only; not used at runtime (DATA_STORE=supabase returns real DB jobs only). See SAMPLE_MODE=false.
+// Sample/demo jobs are deprecated; production renders real jobs only (SAMPLE_MODE=false).
 import type { Job } from "./types";
+
+// SAMPLE_MODE=false indicates sample/demo jobs are no longer rendered in production UI. File retained for seed/dev reference.
+export const SAMPLE_MODE = false;
 
 export const sampleJobs: Job[] = [
   {
