@@ -2,12 +2,12 @@ import type { ScraperSource } from "./types";
 
 export const scraperSources: ScraperSource[] = [
   {
-    scrapingApi: true,
+    scrapingApi: false,
     id: "stepstone-chinese-de",
     name: "StepStone DE - Chinese Keyword",
     nameZh: "StepStone 德国 - 中文关键词",
     type: "rss",
-    url: "https://www.stepstone.de/jobs/chinesisch/in-deutschland/rss",
+    url: "https://www.stepstone.de/jobs/chinesisch/rss",
     enabled: true,
     keywords: ["chinesisch", "chinese", "mandarin", "中文", "china", "china market", "chinese speaking"],
     defaultField: undefined,
@@ -18,25 +18,10 @@ export const scraperSources: ScraperSource[] = [
     id: "indeed-chinese-de",
     name: "Indeed DE - Chinese Keyword",
     nameZh: "Indeed 德国 - 中文关键词",
-    type: "html",
-    url: "https://de.indeed.com/jobs?q=chinesisch&l=Deutschland",
+    type: "rss",
+    url: "https://de.indeed.com/rss?q=chinesisch&l=Deutschland",
     enabled: true,
-    jsRendered: true,
-    puppeteerOptions: {
-      waitForSelector: ".job_seen_bea, [data-jk]",
-      waitTimeout: 10000,
-      scrollDelay: 2000,
-      extraWaitMs: 3000,
-    },
     keywords: ["chinesisch", "chinese", "mandarin", "中文", "china", "china market", "chinese speaking"],
-    selectors: {
-      jobCard: ".job_seen_bea, .result, [data-jk]",
-      title: "h2.jobTitle a, h2 a span, [data-jk] h2 a",
-      company: ".companyName, [data-jk] .companyName",
-      location: ".companyLocation, [data-jk] .companyLocation",
-      link: "h2.jobTitle a, h2 a, a.jobtitle",
-      description: ".job-snippet, .summary",
-    },
     defaultLocationCode: "de",
   },
   {
