@@ -85,6 +85,11 @@ export const translations = {
         internship: "Internship",
         contract: "Contract",
       },
+      sampleBanner: {
+        title: "Sample jobs — demo data + 1 live via Google Jobs",
+        subtitle: "Most listings are samples for preview. Toggle “Only live” to show verified live jobs.",
+      },
+      filterLive: "Only live",
       visaOnly: "Visa sponsorship only",
       remoteOnly: "Remote only",
       featured: "Featured",
@@ -283,7 +288,7 @@ export const translations = {
       empty: "No saved filters yet.",
     },
     digest: {
-      subject: "Your weekly job digest \u2014 {count} new matches",
+      subject: "Your weekly job digest — {count} new matches",
     },
     footer: {
       rights: "All rights reserved.",
@@ -378,6 +383,11 @@ export const translations = {
         internship: "实习",
         contract: "合同制",
       },
+      sampleBanner: {
+        title: "示例岗位 — 演示数据 + 1 条来自 Google Jobs 实时",
+        subtitle: "大部分为演示数据供预览，切换“仅看实时”可查看已验证的实时岗位。",
+      },
+      filterLive: "仅看实时",
       visaOnly: "仅显示有签证担保",
       remoteOnly: "仅显示远程",
       featured: "推荐",
@@ -671,6 +681,11 @@ export const translations = {
         internship: "Praktikum",
         contract: "Vertrag",
       },
+      sampleBanner: {
+        title: "Beispiel-Jobs — Demo + 1 live via Google Jobs",
+        subtitle: "Die meisten Anzeigen sind Demo-Daten zur Vorschau. Mit „Nur live“ siehst du verifizierte Live-Jobs.",
+      },
+      filterLive: "Nur live",
       visaOnly: "Nur mit Visa-Sponsoring",
       remoteOnly: "Nur Remote",
       featured: "Empfohlen",
@@ -869,7 +884,7 @@ export const translations = {
       empty: "Noch keine gespeicherten Filter.",
     },
     digest: {
-      subject: "Ihr w\u00f6chentlicher Job-Digest \u2014 {count} neue Treffer",
+      subject: "Ihr w\u00f6chentlicher Job-Digest — {count} neue Treffer",
     },
     footer: {
       rights: "Alle Rechte vorbehalten.",

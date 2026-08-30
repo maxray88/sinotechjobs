@@ -114,10 +114,13 @@ export default function HomeClient({ allJobs }: { allJobs: Job[] }) {
 
       {/* Featured Jobs Preview */}
       <section style={{ maxWidth: "1200px", margin: "0 auto", padding: "0 1.5rem 4rem" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
-          <h2 style={{ fontSize: "1.5rem", fontWeight: 700 }}>
-            {lang === "zh" ? "推荐职位" : lang === "de" ? "Empfohlene Jobs" : "Featured Jobs"}
-          </h2>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "2rem", gap: "1rem", flexWrap: "wrap" }}>
+          <div>
+            <h2 style={{ fontSize: "1.5rem", fontWeight: 700 }}>
+              {lang === "zh" ? "推荐职位" : lang === "de" ? "Empfohlene Jobs" : "Featured Jobs"}
+            </h2>
+            <p style={{ fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.25rem", maxWidth: "520px", lineHeight: 1.5 }}>{t.jobs.sampleBanner.subtitle}</p>
+          </div>
           <Link href="/jobs" className="btn-outline">
             {lang === "zh" ? "查看全部 →" : lang === "de" ? "Alle ansehen →" : "View All →"}
           </Link>

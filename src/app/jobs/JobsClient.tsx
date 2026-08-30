@@ -15,6 +15,7 @@ export default function JobsClient({ allJobs }: { allJobs: Job[] }) {
   const [employmentFilter, setEmploymentFilter] = useState<EmploymentType | "all">("all");
   const [visaOnly, setVisaOnly] = useState(false);
   const [remoteOnly, setRemoteOnly] = useState(false);
+  const [onlyLive, setOnlyLive] = useState(false);
 
   const filteredJobs = useMemo(() => {
     return allJobs.filter((job) => {
@@ -32,10 +33,11 @@ export default function JobsClient({ allJobs }: { allJobs: Job[] }) {
       const matchesEmployment = employmentFilter === "all" || job.employmentType === employmentFilter;
       const matchesVisa = !visaOnly || job.visaSponsorship;
       const matchesRemote = !remoteOnly || job.remoteFriendly;
+      const matchesLive = !onlyLive || job.id.startsWith("scraped-");
 
-      return matchesSearch && matchesField && matchesLocation && matchesLanguage && matchesEmployment && matchesVisa && matchesRemote;
+      return matchesSearch && matchesField && matchesLocation && matchesLanguage && matchesEmployment && matchesVisa && matchesRemote && matchesLive;
     });
-  }, [allJobs, search, fieldFilter, locationFilter, languageFilter, employmentFilter, visaOnly, remoteOnly]);
+  }, [allJobs, search, fieldFilter, locationFilter, languageFilter, employmentFilter, visaOnly, remoteOnly, onlyLive]);
 
   const clearFilters = () => {
     setSearch("");
@@ -45,6 +47,7 @@ export default function JobsClient({ allJobs }: { allJobs: Job[] }) {
     setEmploymentFilter("all");
     setVisaOnly(false);
     setRemoteOnly(false);
+    setOnlyLive(false);
   };
 
   const selectStyle: React.CSSProperties = {
@@ -87,6 +90,18 @@ export default function JobsClient({ allJobs }: { allJobs: Job[] }) {
       <h1 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "0.5rem" }}>
         {t.jobs.title}
       </h1>
+      <div
+        style={{
+          background: "var(--muted)",
+          border: "1px solid var(--border)",
+          borderRadius: "0.5rem",
+          padding: "0.75rem 1rem",
+          marginBottom: "1.5rem",
+        }}
+      >
+        <div style={{ fontSize: "0.875rem", fontWeight: 700, marginBottom: "0.25rem" }}>{t.jobs.sampleBanner.title}</div>
+        <div style={{ fontSize: "0.8125rem", color: "var(--muted-foreground)", lineHeight: 1.5 }}>{t.jobs.sampleBanner.subtitle}</div>
+      </div>
       <p style={{ color: "var(--muted-foreground)", marginBottom: "2rem", fontSize: "0.875rem" }}>
         {filteredJobs.length} {lang === "zh" ? "个职位" : lang === "de" ? "Jobs" : "jobs found"}
       </p>
@@ -183,6 +198,10 @@ export default function JobsClient({ allJobs }: { allJobs: Job[] }) {
 
       {/* Toggle filters */}
       <div style={{ display: "flex", gap: "1.5rem", marginBottom: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.875rem" }}>
+          <input type="checkbox" checked={onlyLive} onChange={(e) => setOnlyLive(e.target.checked)} />
+          {t.jobs.filterLive}
+        </label>
         <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.875rem" }}>
           <input type="checkbox" checked={visaOnly} onChange={(e) => setVisaOnly(e.target.checked)} />
           {t.jobs.visaOnly}
