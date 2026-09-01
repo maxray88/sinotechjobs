@@ -97,15 +97,23 @@ export async function scrapeSource(source: ScraperSource): Promise<ScrapeResult>
       };
     }
 
-    const buildUrl = (engine: string) =>
-      `https://www.searchapi.io/api/v1/search?engine=${encodeURIComponent(engine)}&q=${encodeURIComponent("chinesisch jobs Germany")}&location=${encodeURIComponent("Germany")}&hl=de&gl=de&api_key=${encodeURIComponent(apiKey)}`;
+    const queries = [
+      "chinesisch jobs Germany",
+      "chinese speaking jobs Germany",
+      "mandarin jobs Germany",
+      "China Market jobs Germany",
+    ];
 
-    let rawJson: string | null = null;
     const fetchMode: FetchMode = "direct";
     let lastError: string | null = null;
+    const seenUrls = new Set<string>();
+    const jobs: ScrapedJobRaw[] = [];
 
-    const tryFetch = async (engine: string): Promise<string | null> => {
-      const url = buildUrl(engine);
+    const buildUrl = (engine: string, query: string) =>
+      `https://www.searchapi.io/api/v1/search?engine=${encodeURIComponent(engine)}&q=${encodeURIComponent(query)}&location=${encodeURIComponent("Germany")}&hl=de&gl=de&api_key=${encodeURIComponent(apiKey)}`;
+
+    const tryFetch = async (engine: string, query: string): Promise<string | null> => {
+      const url = buildUrl(engine, query);
       try {
         const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
         const text = await res.text();
@@ -118,7 +126,6 @@ export async function scrapeSource(source: ScraperSource): Promise<ScrapeResult>
           if (parsed.error) {
             const errMsg = typeof parsed.error === "string" ? parsed.error : JSON.stringify(parsed.error);
             lastError = `SearchAPI ${engine} error: ${errMsg}`;
-            // trigger fallback on engine param errors
             return null;
           }
         } catch {
@@ -131,107 +138,121 @@ export async function scrapeSource(source: ScraperSource): Promise<ScrapeResult>
       }
     };
 
-    rawJson = await tryFetch("google_jobs");
-    if (!rawJson) {
-      console.warn(`[scraper] google-jobs-searchapi engine=google_jobs failed (${lastError}), trying fallback engine=google`);
-      const fallback = await tryFetch("google");
-      if (fallback) rawJson = fallback;
-    }
-
-    if (!rawJson) {
-      if (lastError) errors.push(lastError);
-      if (errors.length === 0) errors.push("Failed to fetch from SearchAPI (both engines)");
-      return {
-        source,
-        jobsFound: 0,
-        jobsFiltered: 0,
-        jobs: [],
-        errors,
-        duration: Date.now() - startTime,
-        fetchMode,
-      };
-    }
-
-    const jobs: ScrapedJobRaw[] = [];
-    try {
-      const data = JSON.parse(rawJson);
-      const list: unknown[] = Array.isArray((data as Record<string, unknown>).jobs_results)
-        ? ((data as Record<string, unknown>).jobs_results as unknown[])
-        : Array.isArray((data as Record<string, unknown>).jobs)
-          ? ((data as Record<string, unknown>).jobs as unknown[])
-          : Array.isArray((data as Record<string, unknown>).results)
-            ? ((data as Record<string, unknown>).results as unknown[])
-            : Array.isArray((data as Record<string, unknown>).organic_results)
-              ? ((data as Record<string, unknown>).organic_results as unknown[])
-              : [];
-
-      for (const item of list) {
-        if (typeof item !== "object" || item === null) continue;
-        const rec = item as Record<string, unknown>;
-        const title = (rec.title as string) || (rec.job_title as string) || (rec.position as string) || "";
-        const company =
-          (rec.company_name as string) ||
-          (rec.company as string) ||
-          (rec.via as string) ||
-          (rec.source as string) ||
-          "";
-        const location =
-          (rec.location as string) ||
-          (rec.city as string) ||
-          (rec.place as string) ||
-          "Germany";
-        let url = "";
-        if (typeof rec.share_link === "string" && rec.share_link) url = rec.share_link;
-        else if (typeof rec.link === "string" && rec.link) url = rec.link;
-        else if (typeof rec.job_link === "string" && rec.job_link) url = rec.job_link;
-        else if (typeof rec.url === "string" && rec.url) url = rec.url;
-        else if (Array.isArray(rec.apply_options) && rec.apply_options.length > 0) {
-          const first = rec.apply_options[0] as Record<string, unknown>;
-          if (typeof first?.link === "string") url = first.link as string;
-        }
-        if (!url) url = source.url;
-
-        const descriptionRaw =
-          (rec.description as string) ||
-          (rec.snippet as string) ||
-          (rec.summary as string) ||
-          "";
-
-        let extText = "";
-        if (Array.isArray(rec.extensions)) extText = (rec.extensions as string[]).join(" ");
-        else if (rec.detected_extensions && typeof rec.detected_extensions === "object") {
-          const de = rec.detected_extensions as Record<string, unknown>;
-          extText = Object.values(de)
-            .filter((v) => typeof v === "string")
-            .join(" ");
-        }
-
-        const description = String(descriptionRaw || extText).substring(0, 2000);
-
-        let postedDateRaw = "";
-        if (typeof rec.posted_at === "string") postedDateRaw = rec.posted_at as string;
-        else if (typeof rec.date === "string") postedDateRaw = rec.date as string;
-        else if (typeof rec.created_at === "string") postedDateRaw = rec.created_at as string;
-        else {
-          const de2 = rec.detected_extensions as Record<string, unknown> | undefined;
-          if (de2 && typeof de2.posted_at === "string") postedDateRaw = de2.posted_at as string;
-        }
-
-        if (title && url) {
-          jobs.push({
-            title: String(title).trim(),
-            company: String(company).trim() || extractCompanyFromSource(source),
-            location: String(location).trim() || "Germany",
-            url: String(url).trim(),
-            description: String(description).trim().substring(0, 2000),
-            postedDate: parseDate(String(postedDateRaw || "")),
-            sourceId: source.id,
-            sourceName: source.name,
-          });
-        }
+    for (const query of queries) {
+      let rawJson: string | null = null;
+      rawJson = await tryFetch("google_jobs", query);
+      if (!rawJson) {
+        console.warn(`[scraper] google-jobs-searchapi query="${query}" engine=google_jobs failed (${lastError}), trying fallback engine=google`);
+        const fallback = await tryFetch("google", query);
+        if (fallback) rawJson = fallback;
       }
-    } catch (e) {
-      errors.push(`Failed to parse SearchAPI response: ${e instanceof Error ? e.message : String(e)}`);
+
+      if (!rawJson) {
+        if (lastError) errors.push(`[${query}] ${lastError}`);
+        console.log(`[scraper] google-jobs query=${query} jobsFound=0`);
+        continue;
+      }
+
+      let jobsForQuery: ScrapedJobRaw[] = [];
+      try {
+        const data = JSON.parse(rawJson);
+        const list: unknown[] = Array.isArray((data as Record<string, unknown>).jobs_results)
+          ? ((data as Record<string, unknown>).jobs_results as unknown[])
+          : Array.isArray((data as Record<string, unknown>).jobs)
+            ? ((data as Record<string, unknown>).jobs as unknown[])
+            : Array.isArray((data as Record<string, unknown>).results)
+              ? ((data as Record<string, unknown>).results as unknown[])
+              : Array.isArray((data as Record<string, unknown>).organic_results)
+                ? ((data as Record<string, unknown>).organic_results as unknown[])
+                : [];
+
+        for (const item of list) {
+          if (typeof item !== "object" || item === null) continue;
+          const rec = item as Record<string, unknown>;
+          const title = (rec.title as string) || (rec.job_title as string) || (rec.position as string) || "";
+          const company =
+            (rec.company_name as string) ||
+            (rec.company as string) ||
+            (rec.via as string) ||
+            (rec.source as string) ||
+            "";
+          const location =
+            (rec.location as string) ||
+            (rec.city as string) ||
+            (rec.place as string) ||
+            "Germany";
+          let url = "";
+          if (typeof rec.share_link === "string" && rec.share_link) url = rec.share_link;
+          else if (typeof rec.link === "string" && rec.link) url = rec.link;
+          else if (typeof rec.job_link === "string" && rec.job_link) url = rec.job_link;
+          else if (typeof rec.url === "string" && rec.url) url = rec.url;
+          else if (Array.isArray(rec.apply_options) && rec.apply_options.length > 0) {
+            const first = rec.apply_options[0] as Record<string, unknown>;
+            if (typeof first?.link === "string") url = first.link as string;
+          }
+          if (!url) url = source.url;
+
+          const descriptionRaw =
+            (rec.description as string) ||
+            (rec.snippet as string) ||
+            (rec.summary as string) ||
+            "";
+
+          let extText = "";
+          if (Array.isArray(rec.extensions)) extText = (rec.extensions as string[]).join(" ");
+          else if (rec.detected_extensions && typeof rec.detected_extensions === "object") {
+            const de = rec.detected_extensions as Record<string, unknown>;
+            extText = Object.values(de)
+              .filter((v) => typeof v === "string")
+              .join(" ");
+          }
+
+          const description = String(descriptionRaw || extText).substring(0, 2000);
+
+          let postedDateRaw = "";
+          if (typeof rec.posted_at === "string") postedDateRaw = rec.posted_at as string;
+          else if (typeof rec.date === "string") postedDateRaw = rec.date as string;
+          else if (typeof rec.created_at === "string") postedDateRaw = rec.created_at as string;
+          else {
+            const de2 = rec.detected_extensions as Record<string, unknown> | undefined;
+            if (de2 && typeof de2.posted_at === "string") postedDateRaw = de2.posted_at as string;
+          }
+
+          if (title && url) {
+            jobsForQuery.push({
+              title: String(title).trim(),
+              company: String(company).trim() || extractCompanyFromSource(source),
+              location: String(location).trim() || "Germany",
+              url: String(url).trim(),
+              description: String(description).trim().substring(0, 2000),
+              postedDate: parseDate(String(postedDateRaw || "")),
+              sourceId: source.id,
+              sourceName: source.name,
+            });
+          }
+        }
+      } catch (e) {
+        errors.push(`[${query}] Failed to parse SearchAPI response: ${e instanceof Error ? e.message : String(e)}`);
+        console.log(`[scraper] google-jobs query=${query} jobsFound=0`);
+        continue;
+      }
+
+      console.log(`[scraper] google-jobs query=${query} jobsFound=${jobsForQuery.length}`);
+
+      for (const j of jobsForQuery) {
+        const key = (j.url || "").trim();
+        const altKey = (j as unknown as Record<string, unknown>).applicationUrl as string | undefined;
+        const dedupKey = key || (altKey ? String(altKey).trim() : "");
+        if (!dedupKey) continue;
+        if (seenUrls.has(dedupKey)) continue;
+        seenUrls.add(dedupKey);
+        if (altKey && altKey !== dedupKey) seenUrls.add(String(altKey).trim());
+        jobs.push(j);
+      }
+    }
+
+    if (jobs.length === 0 && errors.length === 0) {
+      errors.push("Failed to fetch from SearchAPI (all queries, both engines)");
     }
 
     const filtered = jobs.filter((job) => {
