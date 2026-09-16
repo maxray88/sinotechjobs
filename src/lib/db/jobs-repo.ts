@@ -38,6 +38,22 @@ export function isJobExpired(job: { isExpired?: boolean; expiresAt?: string }): 
   return job.expiresAt < new Date().toISOString().split("T")[0];
 }
 
+// True when a PostgREST error means migration 005 hasn't been applied yet
+// (is_expired / expires_at columns missing). Covers Postgres 42703,
+// PostgREST PGRST204, and message variants.
+export function isMissingExpiryColumn(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const record = error as Record<string, unknown>;
+  if (record.code === "42703" || record.code === "PGRST204") return true;
+  const message = typeof record.message === "string" ? record.message : "";
+  if (!message) return false;
+  const lower = message.toLowerCase();
+  const mentionsColumn = lower.includes("is_expired") || lower.includes("expires_at");
+  const missingHint =
+    lower.includes("does not exist") || lower.includes("column") || lower.includes("42703");
+  return mentionsColumn && missingHint;
+}
+
 // ---------------------------------------------------------------------------
 // listJobs — filtered, paginated query
 // ---------------------------------------------------------------------------
@@ -51,63 +67,74 @@ export async function listJobs(
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  // Build query: select with count exact
-  let query: any = supabase.from("jobs").select("*", { count: "exact" });
+  // Build a fresh query; extracted so the degraded path can retry without
+  // the is_expired filter when migration 005 hasn't been applied yet.
+  const buildQuery = (applyExpiryFilter: boolean): any => {
+    let q: any = supabase.from("jobs").select("*", { count: "exact" });
 
-  // Soft-expiry: hide expired by default (admin can opt in via includeExpired)
-  if (!filter.includeExpired) {
-    query = query.eq("is_expired", false);
-  }
+    // Soft-expiry: hide expired by default (admin can opt in via includeExpired)
+    if (applyExpiryFilter) {
+      q = q.eq("is_expired", false);
+    }
 
-  if (filter.field) {
-    query = query.eq("field", filter.field);
-  }
-  if (filter.locationCode) {
-    query = query.eq("location_code", filter.locationCode);
-  }
-  if (filter.languageLevel) {
-    query = query.eq("language_level", filter.languageLevel);
-  }
-  if (filter.employmentType) {
-    query = query.eq("employment_type", filter.employmentType);
-  }
-  if (filter.remote !== undefined) {
-    query = query.eq("remote_friendly", filter.remote);
-  }
-  if (filter.visa !== undefined) {
-    query = query.eq("visa_sponsorship", filter.visa);
-  }
-  if (filter.q) {
-    const escaped = escapeIlike(filter.q);
-    if (!escaped) {
-      // empty or whitespace-only query -> skip filter
-    } else {
-      const pattern = `%${escaped}%`;
-      // Use or with ilike across title/company/description (contains ilike for spec compliance)
-      // Also support ilike fallback for mocks that track ilike separately
-      if (typeof query.or === "function") {
-        query = query.or(`title.ilike.${pattern},company.ilike.${pattern},description.ilike.${pattern}`);
-      } else if (typeof query.ilike === "function") {
-        query = query.ilike("title", pattern);
+    if (filter.field) {
+      q = q.eq("field", filter.field);
+    }
+    if (filter.locationCode) {
+      q = q.eq("location_code", filter.locationCode);
+    }
+    if (filter.languageLevel) {
+      q = q.eq("language_level", filter.languageLevel);
+    }
+    if (filter.employmentType) {
+      q = q.eq("employment_type", filter.employmentType);
+    }
+    if (filter.remote !== undefined) {
+      q = q.eq("remote_friendly", filter.remote);
+    }
+    if (filter.visa !== undefined) {
+      q = q.eq("visa_sponsorship", filter.visa);
+    }
+    if (filter.q) {
+      const escaped = escapeIlike(filter.q);
+      if (!escaped) {
+        // empty or whitespace-only query -> skip filter
+      } else {
+        const pattern = `%${escaped}%`;
+        // Use or with ilike across title/company/description (contains ilike for spec compliance)
+        // Also support ilike fallback for mocks that track ilike separately
+        if (typeof q.or === "function") {
+          q = q.or(`title.ilike.${pattern},company.ilike.${pattern},description.ilike.${pattern}`);
+        } else if (typeof q.ilike === "function") {
+          q = q.ilike("title", pattern);
+        }
       }
     }
-  }
 
-  // Order by posted_date desc, fallback to created_at desc
-  query = query.order("posted_date", { ascending: false });
-  // Some implementations also order by created_at as secondary
-  if (typeof query.order === "function") {
-    // chain second order if supported (not all mocks need it)
-    try {
-      query = query.order("created_at", { ascending: false });
-    } catch {
-      // ignore if mock doesn't support chaining second order
+    // Order by posted_date desc, fallback to created_at desc
+    q = q.order("posted_date", { ascending: false });
+    // Some implementations also order by created_at as secondary
+    if (typeof q.order === "function") {
+      // chain second order if supported (not all mocks need it)
+      try {
+        q = q.order("created_at", { ascending: false });
+      } catch {
+        // ignore if mock doesn't support chaining second order
+      }
     }
+
+    q = q.range(from, to);
+    return q;
+  };
+
+  const applyExpiryFilter = !filter.includeExpired;
+  let { data, error, count } = await buildQuery(applyExpiryFilter);
+
+  // Degraded mode: migration 005 not applied yet -> retry without the filter.
+  if (error && applyExpiryFilter && isMissingExpiryColumn(error)) {
+    console.warn("[jobs-repo] listJobs: expiry columns missing, retrying without is_expired filter");
+    ({ data, error, count } = await buildQuery(false));
   }
-
-  query = query.range(from, to);
-
-  const { data, error, count } = await query;
 
   if (error) {
     throw error;
@@ -142,7 +169,7 @@ export async function getJobById(id: string): Promise<Job | null> {
 // ---------------------------------------------------------------------------
 // expireOverdueJobs — flag rows past expires_at (called by daily cron, best-effort)
 // ---------------------------------------------------------------------------
-export async function expireOverdueJobs(): Promise<{ expiredCount: number }> {
+export async function expireOverdueJobs(): Promise<{ expiredCount: number; degraded?: boolean }> {
   const supabase = getSupabaseAdmin();
   const today = new Date().toISOString().split("T")[0];
   const { data, error } = await supabase
@@ -151,7 +178,14 @@ export async function expireOverdueJobs(): Promise<{ expiredCount: number }> {
     .eq("is_expired", false)
     .lt("expires_at", today)
     .select("id");
-  if (error) throw error;
+  if (error) {
+    // Degraded mode: migration 005 not applied yet -> no-op instead of throwing.
+    if (isMissingExpiryColumn(error)) {
+      console.warn("[jobs-repo] expireOverdueJobs: expiry columns missing, skipping sweep");
+      return { expiredCount: 0, degraded: true };
+    }
+    throw error;
+  }
   return { expiredCount: Array.isArray(data) ? data.length : 0 };
 }
 

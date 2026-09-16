@@ -13,6 +13,7 @@ import {
   expireOverdueJobs,
   hardDeleteExpired,
   isJobExpired,
+  isMissingExpiryColumn,
 } from "@/lib/db/jobs-repo";
 import { rowToJob, jobToRow } from "@/lib/db/mappers";
 
@@ -120,6 +121,65 @@ describe("listJobs expiry filter", () => {
     mockGetSupabaseAdmin.mockReturnValue({ from: vi.fn(() => builder) } as any);
     await listJobs({ includeExpired: true });
     expect((calls["eq"] ?? []).some((a) => a[0] === "is_expired")).toBe(false);
+  });
+});
+
+describe("missing-column degraded mode (005 not applied)", () => {
+  const sampleRow = {
+    id: "9", title: "T", title_zh: null, company: "C", company_zh: null,
+    field: "ai", location: "Berlin", location_code: "de",
+    language_level: "required", employment_type: "full-time",
+    salary_range: null, description: "d", description_zh: null,
+    requirements: [], requirements_zh: [], tags: [],
+    application_url: "https://x", source_url: null,
+    posted_date: "2026-01-01", expires_at: null, is_expired: null,
+    remote_friendly: false, visa_sponsorship: false, featured: false,
+    featured_until: null, tier: null, source: null, source_id: null,
+    created_at: null, updated_at: null,
+  };
+
+  it("listJobs retries without is_expired filter on 42703", async () => {
+    const first = chainable({ data: null, error: { code: "42703", message: 'column "is_expired" does not exist' }, count: 0 });
+    const second = chainable({ data: [sampleRow], error: null, count: 1 });
+    const fromFn = vi.fn().mockReturnValueOnce(first.builder).mockReturnValueOnce(second.builder);
+    mockGetSupabaseAdmin.mockReturnValue({ from: fromFn } as any);
+    const res = await listJobs({});
+    expect(res.items).toHaveLength(1);
+    expect(first.calls["eq"]?.some((a) => a[0] === "is_expired")).toBe(true);
+    expect((second.calls["eq"] ?? []).some((a) => a[0] === "is_expired")).toBe(false);
+    expect(fromFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("listJobs degrades on message-variant missing-column error", async () => {
+    const first = chainable({ data: null, error: { code: "PGRST204", message: "Could not find the 'expires_at' column" }, count: 0 });
+    const second = chainable({ data: [], error: null, count: 0 });
+    const fromFn = vi.fn().mockReturnValueOnce(first.builder).mockReturnValueOnce(second.builder);
+    mockGetSupabaseAdmin.mockReturnValue({ from: fromFn } as any);
+    const res = await listJobs({});
+    expect(res.items).toHaveLength(0);
+    expect(fromFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("listJobs still throws on non-missing-column errors (no retry)", async () => {
+    const { builder } = chainable({ data: null, error: { code: "500", message: "boom" }, count: 0 });
+    const fromFn = vi.fn(() => builder);
+    mockGetSupabaseAdmin.mockReturnValue({ from: fromFn } as any);
+    await expect(listJobs({})).rejects.toMatchObject({ message: "boom" });
+    expect(fromFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("expireOverdueJobs returns degraded instead of throwing on missing column", async () => {
+    const { builder } = chainable({ data: null, error: { code: "42703", message: 'column "expires_at" does not exist' } });
+    mockGetSupabaseAdmin.mockReturnValue({ from: vi.fn(() => builder) } as any);
+    await expect(expireOverdueJobs()).resolves.toEqual({ expiredCount: 0, degraded: true });
+  });
+
+  it("isMissingExpiryColumn detects codes and message variants", () => {
+    expect(isMissingExpiryColumn({ code: "42703" })).toBe(true);
+    expect(isMissingExpiryColumn({ code: "PGRST204" })).toBe(true);
+    expect(isMissingExpiryColumn({ message: 'column "is_expired" does not exist' })).toBe(true);
+    expect(isMissingExpiryColumn({ message: "boom" })).toBe(false);
+    expect(isMissingExpiryColumn(null)).toBe(false);
   });
 });
 
