@@ -2,19 +2,64 @@
 
 import { useState, useMemo } from "react";
 import { useLang } from "@/components/LanguageProvider";
-import type { JobField, JobLocation, LanguageLevel, EmploymentType, Job } from "@/lib/types";
+import type { Job, JobField } from "@/lib/types";
 import Link from "next/link";
 import SaveButton from "@/components/SaveButton";
+import JobCard from "@/components/JobCard";
+import SearchFilters, { type SearchFiltersState } from "@/components/SearchFilters";
+import {
+  adaptJob,
+  computeMatchScore,
+  type CandidateProfile,
+  type FocusArea,
+} from "@/lib/matching";
+
+const FIELD_TO_FOCUS: Record<JobField, FocusArea> = {
+  ai: "ai_ml",
+  cs: "cs",
+  robotics: "robotics",
+  drone: "drones_uav",
+  remote: "remote",
+};
+
+const MATCH_BADGE_THRESHOLD = 70;
+
+function buildDemoCandidate(field: JobField | undefined, subTags: string[]): CandidateProfile {
+  return {
+    id: "demo",
+    full_name: "Demo Candidate",
+    current_location: "Berlin",
+    desired_location: ["Berlin"],
+    visa_status: "eu_citizen",
+    focus_area: field ? FIELD_TO_FOCUS[field] : "ai_ml",
+    sub_specializations: subTags,
+    years_of_experience: 5,
+    current_role: "Engineer",
+    bio: "",
+    languages: {},
+    hsk_level: 5,
+    salary_expectation_min: 60000,
+    salary_expectation_max: 80000,
+    chinese_university: "Tsinghua University",
+    hometown_province: null,
+    profile_completeness: 90,
+    last_active_at: new Date().toISOString(),
+  };
+}
+
+/** Flexible overlap: exact, case-insensitive, or either side contains the other. */
+function tagOverlaps(jobTags: string[], subTags: string[]): boolean {
+  const lower = jobTags.map((t) => t.toLowerCase());
+  return subTags.some((sub) => {
+    const s = sub.toLowerCase();
+    return lower.some((t) => t === s || t.includes(s) || s.includes(t));
+  });
+}
 
 export default function JobsClient({ allJobs }: { allJobs: Job[] }) {
   const { t, lang } = useLang();
   const [search, setSearch] = useState("");
-  const [fieldFilter, setFieldFilter] = useState<JobField | "all">("all");
-  const [locationFilter, setLocationFilter] = useState<JobLocation | "all">("all");
-  const [languageFilter, setLanguageFilter] = useState<LanguageLevel | "all">("all");
-  const [employmentFilter, setEmploymentFilter] = useState<EmploymentType | "all">("all");
-  const [visaOnly, setVisaOnly] = useState(false);
-  const [remoteOnly, setRemoteOnly] = useState(false);
+  const [filters, setFilters] = useState<SearchFiltersState>({});
 
   const filteredJobs = useMemo(() => {
     return allJobs.filter((job) => {
@@ -26,61 +71,50 @@ export default function JobsClient({ allJobs }: { allJobs: Job[] }) {
         job.company.toLowerCase().includes(searchLower) ||
         job.tags.some((tag) => tag.toLowerCase().includes(searchLower));
 
-      const matchesField = fieldFilter === "all" || job.field === fieldFilter;
-      const matchesLocation = locationFilter === "all" || job.locationCode === locationFilter;
-      const matchesLanguage = languageFilter === "all" || job.languageLevel === languageFilter;
-      const matchesEmployment = employmentFilter === "all" || job.employmentType === employmentFilter;
-      const matchesVisa = !visaOnly || job.visaSponsorship;
-      const matchesRemote = !remoteOnly || job.remoteFriendly;
+      const matchesField = !filters.field || job.field === filters.field;
+      const matchesLocation = !filters.location || job.locationCode === filters.location;
+      const matchesLanguage = !filters.languageLevel || job.languageLevel === filters.languageLevel;
+      const matchesEmployment = !filters.employmentType || job.employmentType === filters.employmentType;
+      const matchesVisa = !filters.visaSponsorship || job.visaSponsorship;
+      const matchesRemote = !filters.remoteFriendly || job.remoteFriendly;
+      const matchesSubTags =
+        !filters.subTags ||
+        filters.subTags.length === 0 ||
+        tagOverlaps(job.tags, filters.subTags);
 
-      return matchesSearch && matchesField && matchesLocation && matchesLanguage && matchesEmployment && matchesVisa && matchesRemote;
+      return (
+        matchesSearch &&
+        matchesField &&
+        matchesLocation &&
+        matchesLanguage &&
+        matchesEmployment &&
+        matchesVisa &&
+        matchesRemote &&
+        matchesSubTags
+      );
     });
-  }, [allJobs, search, fieldFilter, locationFilter, languageFilter, employmentFilter, visaOnly, remoteOnly]);
+  }, [allJobs, search, filters]);
 
-  const clearFilters = () => {
-    setSearch("");
-    setFieldFilter("all");
-    setLocationFilter("all");
-    setLanguageFilter("all");
-    setEmploymentFilter("all");
-    setVisaOnly(false);
-    setRemoteOnly(false);
-  };
-
-  const selectStyle: React.CSSProperties = {
-    padding: "0.5rem 0.75rem",
-    borderRadius: "0.5rem",
-    border: "1px solid var(--border)",
-    background: "var(--background)",
-    color: "var(--foreground)",
-    fontSize: "0.875rem",
-    outline: "none",
-    cursor: "pointer",
-  };
-
-  const labelStyle: React.CSSProperties = {
-    fontSize: "0.75rem",
-    fontWeight: 600,
-    color: "var(--muted-foreground)",
-    marginBottom: "0.375rem",
-    display: "block",
-    textTransform: "uppercase",
-    letterSpacing: "0.025em",
-  };
-
-  const fieldColors: Record<JobField, string> = {
-    ai: "#8b5cf6",
-    cs: "#3b82f6",
-    robotics: "#f59e0b",
-    drone: "#10b981",
-    remote: "#6366f1",
-  };
-
-  const languageLevelBadge: Record<LanguageLevel, { bg: string; color: string }> = {
-    "nice-to-have": { bg: "#fef3c7", color: "#92400e" },
-    required: { bg: "#fed7aa", color: "#9a3412" },
-    fluent: { bg: "#fecaca", color: "#991b1b" },
-  };
+  const matchByJobId = useMemo(() => {
+    const candidate = buildDemoCandidate(filters.field, filters.subTags ?? []);
+    const map = new Map<string, { score: number; reasons: string[] }>();
+    for (const job of filteredJobs) {
+      const criteria = adaptJob(job);
+      if (!filters.field) {
+        // No field filter: align candidate focus with the job so the hard
+        // focus-area gate doesn't zero every score.
+        candidate.focus_area = criteria.focus_area;
+      }
+      // Align desired location with the job location string so the demo
+      // score reflects soft-signal fit rather than the hard location gate.
+      candidate.desired_location = [criteria.location];
+      const result = computeMatchScore(candidate, criteria);
+      if (result.hardFilterPass && result.score >= MATCH_BADGE_THRESHOLD) {
+        map.set(job.id, { score: result.score, reasons: result.reasons });
+      }
+    }
+    return map;
+  }, [filteredJobs, filters.field, filters.subTags]);
 
   return (
     <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "2rem 1.5rem" }}>
@@ -112,89 +146,7 @@ export default function JobsClient({ allJobs }: { allJobs: Job[] }) {
       </div>
 
       {/* Filters */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-          gap: "1rem",
-          marginBottom: "1rem",
-        }}
-      >
-        <div>
-          <label style={labelStyle}>{t.jobs.filters.field}</label>
-          <select
-            value={fieldFilter}
-            onChange={(e) => setFieldFilter(e.target.value as JobField | "all")}
-            style={selectStyle}
-          >
-            <option value="all">{t.jobs.fields.all}</option>
-            <option value="ai">{t.jobs.fields.ai}</option>
-            <option value="cs">{t.jobs.fields.cs}</option>
-            <option value="robotics">{t.jobs.fields.robotics}</option>
-            <option value="drone">{t.jobs.fields.drone}</option>
-            <option value="remote">{t.jobs.fields.remote}</option>
-          </select>
-        </div>
-
-        <div>
-          <label style={labelStyle}>{t.jobs.filters.location}</label>
-          <select
-            value={locationFilter}
-            onChange={(e) => setLocationFilter(e.target.value as JobLocation | "all")}
-            style={selectStyle}
-          >
-            <option value="all">{t.jobs.locations.all}</option>
-            <option value="de">{t.jobs.locations.de}</option>
-            <option value="at">{t.jobs.locations.at}</option>
-            <option value="ch">{t.jobs.locations.ch}</option>
-            <option value="remote">{t.jobs.locations.remote}</option>
-          </select>
-        </div>
-
-        <div>
-          <label style={labelStyle}>{t.jobs.filters.languageLevel}</label>
-          <select
-            value={languageFilter}
-            onChange={(e) => setLanguageFilter(e.target.value as LanguageLevel | "all")}
-            style={selectStyle}
-          >
-            <option value="all">{t.jobs.languageLevels.all}</option>
-            <option value="nice-to-have">{t.jobs.languageLevels["nice-to-have"]}</option>
-            <option value="required">{t.jobs.languageLevels["required"]}</option>
-            <option value="fluent">{t.jobs.languageLevels["fluent"]}</option>
-          </select>
-        </div>
-
-        <div>
-          <label style={labelStyle}>{t.jobs.filters.employmentType}</label>
-          <select
-            value={employmentFilter}
-            onChange={(e) => setEmploymentFilter(e.target.value as EmploymentType | "all")}
-            style={selectStyle}
-          >
-            <option value="all">{t.jobs.employmentTypes.all}</option>
-            <option value="full-time">{t.jobs.employmentTypes["full-time"]}</option>
-            <option value="part-time">{t.jobs.employmentTypes["part-time"]}</option>
-            <option value="internship">{t.jobs.employmentTypes["internship"]}</option>
-            <option value="contract">{t.jobs.employmentTypes["contract"]}</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Toggle filters */}
-      <div style={{ display: "flex", gap: "1.5rem", marginBottom: "1rem", flexWrap: "wrap", alignItems: "center" }}>
-        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.875rem" }}>
-          <input type="checkbox" checked={visaOnly} onChange={(e) => setVisaOnly(e.target.checked)} />
-          {t.jobs.visaOnly}
-        </label>
-        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.875rem" }}>
-          <input type="checkbox" checked={remoteOnly} onChange={(e) => setRemoteOnly(e.target.checked)} />
-          {t.jobs.remoteOnly}
-        </label>
-        <button onClick={clearFilters} className="btn-outline" style={{ fontSize: "0.75rem", padding: "0.25rem 0.75rem" }}>
-          {t.jobs.filters.clear}
-        </button>
-      </div>
+      <SearchFilters lang={lang} initialFilters={filters} onFiltersChange={setFilters} />
 
       {/* Job List */}
       {filteredJobs.length === 0 ? (
@@ -207,75 +159,22 @@ export default function JobsClient({ allJobs }: { allJobs: Job[] }) {
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginTop: "1.5rem" }}>
-          {filteredJobs.map((job: Job) => (
-            <div key={job.id} className="card" style={{ position: "relative" }}>
-              <div style={{ position: "absolute", top: "0.75rem", right: "0.75rem", zIndex: 1 }}>
-                <SaveButton jobId={job.id} size="sm" />
-              </div>
-              <Link href={`/jobs/${job.id}`} style={{ textDecoration: "none", color: "inherit", display: "block" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
-                <div style={{ flex: "1", minWidth: "250px" }}>
-                  <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", flexWrap: "wrap" }}>
-                    <span
-                      style={{
-                        display: "inline-block",
-                        background: fieldColors[job.field],
-                        color: "white",
-                        padding: "0.125rem 0.5rem",
-                        borderRadius: "9999px",
-                        fontSize: "0.6875rem",
-                        fontWeight: 700,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      {t.jobs.fields[job.field]}
-                    </span>
-                    {job.featured && <span className="badge-featured">{t.jobs.featured}</span>}
-                    {job.remoteFriendly && <span className="badge-remote">Remote</span>}
-                    {job.visaSponsorship && <span className="badge-visa">Visa</span>}
-                    {job.id.startsWith("scraped") && (
-                      <span style={{ background: "#e0e7ff", color: "#3730a3", padding: "0.125rem 0.5rem", borderRadius: "9999px", fontSize: "0.6875rem", fontWeight: 700 }}>
-                        Scraped
-                      </span>
-                    )}
-                  </div>
-                  <h3 style={{ fontSize: "1.0625rem", fontWeight: 700, marginBottom: "0.25rem", lineHeight: 1.4 }}>
-                    {lang === "zh" ? job.titleZh : job.title}
-                  </h3>
-                  <p style={{ fontSize: "0.8125rem", color: "var(--muted-foreground)", marginBottom: "0.5rem" }}>
-                    {job.company} · {job.location}
-                  </p>
-                  <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap" }}>
-                    {job.tags.slice(0, 4).map((tag) => (
-                      <span key={tag} className="tag">{tag}</span>
-                    ))}
-                  </div>
+          {filteredJobs.map((job: Job) => {
+            const match = matchByJobId.get(job.id);
+            return (
+              <div key={job.id} style={{ position: "relative" }}>
+                <div style={{ position: "absolute", top: "0.75rem", right: "0.75rem", zIndex: 1 }}>
+                  <SaveButton jobId={job.id} size="sm" />
                 </div>
-                <div style={{ textAlign: "right", flexShrink: 0 }}>
-                  <div
-                    style={{
-                      display: "inline-block",
-                      background: languageLevelBadge[job.languageLevel].bg,
-                      color: languageLevelBadge[job.languageLevel].color,
-                      padding: "0.125rem 0.5rem",
-                      borderRadius: "9999px",
-                      fontSize: "0.6875rem",
-                      fontWeight: 700,
-                      marginBottom: "0.25rem",
-                    }}
-                  >
-                    {lang === "zh" ? "中文" : "Chinese"}: {t.jobs.languageLevels[job.languageLevel]}
-                  </div>
-                  {job.salaryRange && (
-                    <p style={{ fontSize: "0.75rem", color: "var(--muted-foreground)", marginTop: "0.25rem" }}>
-                      {job.salaryRange}
-                    </p>
-                  )}
-                </div>
+                <JobCard
+                  job={job}
+                  lang={lang}
+                  matchScore={match?.score}
+                  matchReasons={match?.reasons}
+                />
               </div>
-              </Link>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
