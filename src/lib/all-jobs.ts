@@ -5,6 +5,8 @@ import { loadScrapedJobs } from "./scraper/storage";
 export async function getAllJobs(): Promise<Job[]> {
   if (process.env.DATA_STORE === "supabase") {
     const { listJobs } = await import("./db/jobs-repo");
+    // listJobs defaults to includeExpired=false → expired jobs hidden from board.
+    // Detail page (getJobById) still returns them with an Expired badge.
     const { items: dbJobs } = await listJobs({ pageSize: 1000 });
     // Real jobs only — demo sampleJobs deprecated (see jobs.ts SAMPLE_MODE=false). Return live DB jobs exclusively.
     return [...dbJobs];

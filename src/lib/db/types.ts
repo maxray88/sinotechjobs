@@ -23,6 +23,8 @@ export type JobRow = {
   application_url: string;
   source_url: string | null;
   posted_date: string | null;
+  expires_at?: string | null;
+  is_expired?: boolean | null;
   remote_friendly: boolean | null;
   visa_sponsorship: boolean | null;
   featured: boolean | null;

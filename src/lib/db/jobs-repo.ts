@@ -27,7 +27,16 @@ export type ListJobsFilter = {
   q?: string;
   page?: number;
   pageSize?: number;
+  /** default false: hide soft-expired jobs. Pass true for admin/detail flows. */
+  includeExpired?: boolean;
 };
+
+// Pure helper — a job counts as expired when flagged OR past its expires_at date.
+export function isJobExpired(job: { isExpired?: boolean; expiresAt?: string }): boolean {
+  if (job.isExpired) return true;
+  if (!job.expiresAt) return false;
+  return job.expiresAt < new Date().toISOString().split("T")[0];
+}
 
 // ---------------------------------------------------------------------------
 // listJobs — filtered, paginated query
@@ -44,6 +53,11 @@ export async function listJobs(
 
   // Build query: select with count exact
   let query: any = supabase.from("jobs").select("*", { count: "exact" });
+
+  // Soft-expiry: hide expired by default (admin can opt in via includeExpired)
+  if (!filter.includeExpired) {
+    query = query.eq("is_expired", false);
+  }
 
   if (filter.field) {
     query = query.eq("field", filter.field);
@@ -123,6 +137,38 @@ export async function getJobById(id: string): Promise<Job | null> {
   }
   if (!data) return null;
   return rowToJob(data as JobRow);
+}
+
+// ---------------------------------------------------------------------------
+// expireOverdueJobs — flag rows past expires_at (called by daily cron, best-effort)
+// ---------------------------------------------------------------------------
+export async function expireOverdueJobs(): Promise<{ expiredCount: number }> {
+  const supabase = getSupabaseAdmin();
+  const today = new Date().toISOString().split("T")[0];
+  const { data, error } = await supabase
+    .from("jobs")
+    .update({ is_expired: true } as never)
+    .eq("is_expired", false)
+    .lt("expires_at", today)
+    .select("id");
+  if (error) throw error;
+  return { expiredCount: Array.isArray(data) ? data.length : 0 };
+}
+
+// ---------------------------------------------------------------------------
+// hardDeleteExpired — admin cleanup: permanently delete rows expired > days ago
+// ---------------------------------------------------------------------------
+export async function hardDeleteExpired(days = 90): Promise<{ deletedCount: number }> {
+  const supabase = getSupabaseAdmin();
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+  const { data, error } = await supabase
+    .from("jobs")
+    .delete()
+    .eq("is_expired", true)
+    .lt("expires_at", cutoff)
+    .select("id");
+  if (error) throw error;
+  return { deletedCount: Array.isArray(data) ? data.length : 0 };
 }
 
 // ---------------------------------------------------------------------------

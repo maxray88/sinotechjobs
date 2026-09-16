@@ -27,6 +27,8 @@ export function rowToJob(row: JobRow): Job {
     postedDate:
       row.posted_date ??
       (row.created_at ? row.created_at.split("T")[0] : new Date().toISOString().split("T")[0]),
+    ...(row.expires_at ? { expiresAt: row.expires_at } : {}),
+    isExpired: row.is_expired ?? false,
     remoteFriendly: row.remote_friendly ?? false,
     visaSponsorship: row.visa_sponsorship ?? false,
     featured: row.featured ?? false,
@@ -34,7 +36,7 @@ export function rowToJob(row: JobRow): Job {
 }
 
 export function jobToRow(job: Job): JobRow {
-  // Job may not have sourceUrl / tier / source / sourceId / featuredUntil
+  // Job may not have sourceUrl / tier / source / sourceId / featuredUntil / expiresAt
   const extended = job as Job & {
     sourceUrl?: string;
     source?: string;
@@ -63,6 +65,8 @@ export function jobToRow(job: Job): JobRow {
     // Store applicationUrl as source_url for deduplication if sourceUrl not present
     source_url: extended.sourceUrl ?? job.applicationUrl ?? null,
     posted_date: job.postedDate ?? null,
+    expires_at: job.expiresAt ?? null,
+    is_expired: job.isExpired ?? null,
     remote_friendly: job.remoteFriendly ?? null,
     visa_sponsorship: job.visaSponsorship ?? null,
     featured: job.featured ?? null,

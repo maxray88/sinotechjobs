@@ -70,6 +70,17 @@ export async function GET(request: NextRequest) {
       console.error("[cron/daily] saveScrapeReportAsync failed", err);
     }
 
+    // Soft-expiry sweep: flag overdue jobs (best-effort, never throws)
+    let expiredCount = 0;
+    try {
+      const { expireOverdueJobs } = await import("@/lib/db/jobs-repo");
+      const res = await expireOverdueJobs();
+      expiredCount = res.expiredCount;
+      console.log(`[cron/daily] expired ${expiredCount} overdue jobs`);
+    } catch (err) {
+      console.warn("[cron/daily] expireOverdueJobs failed", err);
+    }
+
     const result = {
       timestamp: report.timestamp,
       totalSources: report.totalSources,
@@ -79,6 +90,7 @@ export async function GET(request: NextRequest) {
       newJobsAdded: report.newJobsAdded,
       duplicates: skipped,
       totalJobsInDb: total,
+      expiredCount,
     };
 
     // Watchdog: fetch last 3 reports and alert if needed (non-blocking)

@@ -22,6 +22,8 @@ export interface Job {
   tags: string[];
   applicationUrl: string;
   postedDate: string;
+  expiresAt?: string;
+  isExpired?: boolean;
   remoteFriendly: boolean;
   visaSponsorship: boolean;
   featured?: boolean;

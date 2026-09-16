@@ -62,6 +62,7 @@ export default function JobDetailClient({ job }: { job: Job }) {
             {t.jobs.fields[job.field]}
           </span>
           {job.featured && <span className="badge-featured">{t.jobs.featured}</span>}
+          {job.isExpired && <span className="badge-expired">{t.jobs.expired}</span>}
           {job.remoteFriendly && <span className="badge-remote">Remote</span>}
           {job.visaSponsorship && <span className="badge-visa">Visa Sponsorship</span>}
         </div>

@@ -163,6 +163,18 @@ body {
   font-weight: 700;
 }
 
+.badge-expired {
+  display: inline-block;
+  background: #fee2e2;
+  color: #991b1b;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
 .lang-active {
   background: var(--primary) !important;
   color: white !important;
@@ -180,6 +192,10 @@ body {
   .badge-visa {
     background: #1e3a8a;
     color: #bfdbfe;
+  }
+  .badge-expired {
+    background: #7f1d1d;
+    color: #fecaca;
   }
   .card:hover {
     border-color: var(--primary-light);

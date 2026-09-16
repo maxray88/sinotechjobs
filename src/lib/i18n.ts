@@ -93,6 +93,7 @@ export const translations = {
       visaOnly: "Visa sponsorship only",
       remoteOnly: "Remote only",
       featured: "Featured",
+      expired: "Expired",
       noResults: "No jobs found. Try adjusting your filters.",
       emptyLiveCTA: {
         title: "No live jobs yet — Be the first to post",
@@ -395,6 +396,7 @@ export const translations = {
       visaOnly: "仅显示有签证担保",
       remoteOnly: "仅显示远程",
       featured: "推荐",
+      expired: "已过期",
       noResults: "未找到匹配职位，请调整筛选条件。",
       emptyLiveCTA: {
         title: "暂无实时岗位 — 成为首个发布者",
@@ -697,6 +699,7 @@ export const translations = {
       visaOnly: "Nur mit Visa-Sponsoring",
       remoteOnly: "Nur Remote",
       featured: "Empfohlen",
+      expired: "Abgelaufen",
       noResults: "Keine Jobs gefunden. Filter anpassen.",
       emptyLiveCTA: {
         title: "Noch keine Live-Jobs — Erste Stelle kostenlos posten",
