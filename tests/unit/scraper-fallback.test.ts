@@ -63,7 +63,9 @@ describe("fetchViaScrapingAPI", () => {
     expect(calledUrl).toContain("https://app.scrapingbee.com/api/v1/");
     expect(calledUrl).toContain(`api_key=${encodeURIComponent("bee-key-123")}`);
     expect(calledUrl).toContain(`url=${encodeURIComponent("https://example.com/job?q=test&lang=zh")}`);
-    expect(calledUrl).toContain("render_js=false");
+    expect(calledUrl).toContain("render_js=true");
+    expect(calledUrl).toContain("premium_proxy=true");
+    expect(calledUrl).toContain("country_code=de");
   });
 
   it("builds correct ScraperAPI URL when provider=scraperapi", async () => {

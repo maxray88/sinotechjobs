@@ -153,7 +153,7 @@ export async function scrapeSource(source: ScraperSource): Promise<ScrapeResult>
         continue;
       }
 
-      let jobsForQuery: ScrapedJobRaw[] = [];
+      const jobsForQuery: ScrapedJobRaw[] = [];
       try {
         const data = JSON.parse(rawJson);
         const list: unknown[] = Array.isArray((data as Record<string, unknown>).jobs_results)
