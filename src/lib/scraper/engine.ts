@@ -98,10 +98,10 @@ export async function scrapeSource(source: ScraperSource): Promise<ScrapeResult>
     }
 
     const queries = [
-      "chinesisch jobs Germany",
-      "chinese speaking jobs Germany",
-      "mandarin jobs Germany",
-      "China Market jobs Germany",
+      "Chinese speaking jobs Germany",
+      "Mandarin jobs Germany",
+      "Chinese language jobs Germany",
+      "China business jobs Germany",
     ];
 
     const fetchMode: FetchMode = "direct";
@@ -110,7 +110,7 @@ export async function scrapeSource(source: ScraperSource): Promise<ScrapeResult>
     const jobs: ScrapedJobRaw[] = [];
 
     const buildUrl = (engine: string, query: string) =>
-      `https://www.searchapi.io/api/v1/search?engine=${encodeURIComponent(engine)}&q=${encodeURIComponent(query)}&location=${encodeURIComponent("Germany")}&hl=de&gl=de&api_key=${encodeURIComponent(apiKey)}`;
+      `https://www.searchapi.io/api/v1/search?engine=${encodeURIComponent(engine)}&q=${encodeURIComponent(query)}&location=${encodeURIComponent("Germany")}&hl=en&gl=de&api_key=${encodeURIComponent(apiKey)}`;
 
     const tryFetch = async (engine: string, query: string): Promise<string | null> => {
       const url = buildUrl(engine, query);
