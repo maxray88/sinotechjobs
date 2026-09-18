@@ -283,7 +283,7 @@ export const scraperSources: ScraperSource[] = [
     nameZh: "Google 职位 - SearchAPI",
     type: "json-api",
     url: "https://www.searchapi.io/api/v1/search",
-    enabled: true,
+    enabled: false,
     keywords: ["chinesisch", "chinese", "mandarin", "china", "china market", "chinese speaking"],
     defaultLocationCode: "de",
   },
