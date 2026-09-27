@@ -3,13 +3,33 @@
 import { useState } from "react";
 import { useLang } from "./LanguageProvider";
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Mirrors the dot-atom pattern in src/app/api/subscribe/route.ts — keep in sync.
+const ATEXT = "[A-Za-z0-9!#$%&*+/=?^_`{|}~\\p{L}\\p{N}-]";
+const LABEL = "[A-Za-z0-9\\p{L}\\p{N}](?:[A-Za-z0-9\\p{L}\\p{N}-]*[A-Za-z0-9\\p{L}\\p{N}])?";
+const EMAIL_REGEX = new RegExp(
+  `^${ATEXT}+(?:\\.${ATEXT}+)*@(${LABEL}\\.)+[A-Za-z\\p{L}]{2,}$`,
+  "u"
+);
+
+// Off-screen rather than display:none — bots skip display:none fields, and a
+// hidden-but-rendered input is what a naive form-filling bot will fill in.
+const HONEYPOT_STYLE: React.CSSProperties = {
+  position: "absolute",
+  left: "-9999px",
+  top: "-9999px",
+  width: "1px",
+  height: "1px",
+  overflow: "hidden",
+  opacity: 0,
+  pointerEvents: "none",
+};
 
 type Status = "idle" | "loading" | "success" | "error";
 
 export default function EmailCapture() {
   const { lang, t } = useLang();
   const [email, setEmail] = useState("");
+  const [website, setWebsite] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
 
@@ -30,7 +50,7 @@ export default function EmailCapture() {
       const res = await fetch("/api/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: trimmed, language: lang }),
+        body: JSON.stringify({ email: trimmed, language: lang, website }),
       });
 
       const data = (await res.json().catch(() => ({}))) as {
@@ -48,6 +68,7 @@ export default function EmailCapture() {
       setStatus("success");
       setMessage(t.emailCapture.success);
       setEmail("");
+      setWebsite("");
     } catch {
       setStatus("error");
       setMessage("Internal error");
@@ -112,6 +133,18 @@ export default function EmailCapture() {
               outline: "none",
             }}
           />
+          <div aria-hidden="true" style={HONEYPOT_STYLE}>
+            <label htmlFor="subscribe-website">Website</label>
+            <input
+              id="subscribe-website"
+              name="website"
+              type="text"
+              tabIndex={-1}
+              autoComplete="off"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+            />
+          </div>
           <button
             type="submit"
             disabled={status === "loading"}
