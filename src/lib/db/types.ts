@@ -17,9 +17,12 @@ export type JobRow = {
   salary_range: string | null;
   description: string;
   description_zh: string | null;
-  requirements: string[];
-  requirements_zh: string[];
-  tags: string[];
+  // 001_init.sql declares these `TEXT[] DEFAULT '{}'`. A DEFAULT applies only
+  // when the column is *omitted*; an explicit NULL is still storable, so these
+  // are nullable at the row level. `rowToJob` is what coerces them to `[]`.
+  requirements: string[] | null;
+  requirements_zh: string[] | null;
+  tags: string[] | null;
   application_url: string;
   source_url: string | null;
   posted_date: string | null;

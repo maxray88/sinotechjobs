@@ -6,6 +6,13 @@ import type { Job, JobField, JobLocation, LanguageLevel, EmploymentType } from "
 // ---------------------------------------------------------------------------
 
 export function rowToJob(row: JobRow): Job {
+  // No `as Job` here on purpose. 001_init.sql leaves title_zh, location,
+  // description_zh, requirements, requirements_zh and tags nullable, so the
+  // `??` coercions below are load-bearing -- they are what makes the `Job`
+  // type's non-null promises true. An assertion would let someone delete a
+  // coercion and still typecheck, turning a guaranteed-safe field into a
+  // null-crash for the next caller that writes `job.description.slice(...)`.
+  // If you add a field here, coerce it; the return type will check you.
   return {
     id: row.id,
     title: row.title,
@@ -32,7 +39,7 @@ export function rowToJob(row: JobRow): Job {
     remoteFriendly: row.remote_friendly ?? false,
     visaSponsorship: row.visa_sponsorship ?? false,
     featured: row.featured ?? false,
-  } as Job;
+  };
 }
 
 export function jobToRow(job: Job): JobRow {

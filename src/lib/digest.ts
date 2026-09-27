@@ -32,20 +32,26 @@ export function matchesFilter(job: Job, filter: DigestFilter): boolean {
   if (typeof filter.remote === "boolean" && job.remoteFriendly !== filter.remote) return false;
   if (typeof filter.visa === "boolean" && job.visaSponsorship !== filter.visa) return false;
   if (filter.q !== undefined && filter.q !== null) {
-    const q = String(filter.q).trim();
-    if (q.length > 0) {
-      const needle = q.toLowerCase();
-      const haystack = [
-        job.title ?? "",
-        job.titleZh ?? "",
-        job.company ?? "",
+      const q = String(filter.q).trim();
+      if (q.length > 0) {
+        const needle = q.toLowerCase();
+        // No `?? ""` / `?? []` on the required Job fields. rowToJob is the
+        // documented boundary that guarantees these are non-null (see the Job
+        // doc comment in src/lib/types.ts), and it carries no type assertion,
+        // so a null here means the boundary broke -- which should surface
+        // loudly, not be silently flattened to an empty string. companyZh is
+        // genuinely optional on Job, so only it keeps the guard.
+        const haystack = [
+        job.title,
+        job.titleZh,
+        job.company,
         job.companyZh ?? "",
-        job.location ?? "",
-        job.description ?? "",
-        job.descriptionZh ?? "",
-        ...(job.tags ?? []),
-        ...(job.requirements ?? []),
-        ...(job.requirementsZh ?? []),
+        job.location,
+        job.description,
+        job.descriptionZh,
+        ...job.tags,
+        ...job.requirements,
+        ...job.requirementsZh,
       ]
         .join(" ")
         .toLowerCase();
@@ -87,13 +93,23 @@ export async function buildDigestForUser(
   const rows = (data ?? []) as unknown[];
   // Map DB rows to domain Jobs; if mapping fails, skip row
   const jobs: Job[] = [];
+  let failed = 0;
   for (const r of rows) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       jobs.push(rowToJob(r as any));
     } catch (e) {
+      failed += 1;
       console.warn("[digest] rowToJob failed", e);
     }
+  }
+  // The per-row warn above is swallowed by the loop, so a batch where every
+  // row is malformed produces a silently empty digest with no single visible
+  // signal. One aggregate line makes the drop count obvious in the run log.
+  if (failed > 0) {
+    console.warn(
+      `[digest] ${failed} of ${rows.length} fetched job row(s) failed mapping and were dropped from the digest`,
+    );
   }
 
   const matched: Job[] = [];

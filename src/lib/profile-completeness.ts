@@ -38,8 +38,23 @@ const REQUIRED_FIELDS = [
   'availability',
 ] as const;
 
+// The single definition of "this field counts toward completeness". BOTH loops
+// below must use it. An earlier version had a second, inline copy in the
+// optional loop that disagreed with this one -- it skipped plain objects and
+// counted any number, including NaN -- so adding a boolean or object field to
+// OPTIONAL_FIELDS would have scored the two halves differently.
+//
+// Booleans count as filled when present: `false` is a deliberate answer to a
+// question, not an empty field. The required loop has always scored it that
+// way, and unifying on this function is what keeps the two halves in agreement.
 function isFilled(value: unknown): boolean {
-  if (value === null || value === undefined || value === '') return false;
+  if (value === null || value === undefined) return false;
+  // Trim before the empty check so a whitespace-only bio ("   ") is not
+  // mistaken for a filled one.
+  if (typeof value === 'string') return value.trim().length > 0;
+  // NaN (and Infinity) are not real answers; a padded profile should not
+  // score as complete.
+  if (typeof value === 'number') return Number.isFinite(value);
   if (Array.isArray(value)) return value.length > 0;
   if (typeof value === 'object') return Object.keys(value).length > 0;
   return true;
@@ -54,17 +69,7 @@ export function computeProfileCompleteness(candidate: CandidateShape): number {
   }
 
   for (const field of OPTIONAL_FIELDS) {
-    const value = candidate[field];
-    if (value === null || value === undefined || value === '') continue;
-    if (Array.isArray(value)) {
-      if (value.length > 0) filled++;
-    } else if (typeof value === 'string') {
-      if (value.length > 0) filled++;
-    } else if (typeof value === 'number') {
-      filled++;
-    } else if (typeof value === 'boolean') {
-      if (value) filled++;
-    }
+    if (isFilled(candidate[field])) filled++;
   }
 
   return Math.round((filled / total) * 100);
