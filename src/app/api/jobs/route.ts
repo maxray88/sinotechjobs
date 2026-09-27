@@ -88,11 +88,11 @@ export async function GET(request: NextRequest) {
     filtered = filtered.filter(
       (j) =>
         j.title.toLowerCase().includes(qLower) ||
-        j.titleZh.includes(q) ||
+        (j.titleZh ?? "").toLowerCase().includes(qLower) ||
         j.company.toLowerCase().includes(qLower) ||
-        (j.companyZh && j.companyZh.includes(q)) ||
+        (j.companyZh ?? "").toLowerCase().includes(qLower) ||
         j.description.toLowerCase().includes(qLower) ||
-        j.descriptionZh.includes(q) ||
+        (j.descriptionZh ?? "").toLowerCase().includes(qLower) ||
         j.tags.some((tag) => tag.toLowerCase().includes(qLower))
     );
   }

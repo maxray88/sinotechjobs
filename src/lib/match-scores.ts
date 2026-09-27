@@ -54,13 +54,20 @@ export async function saveMatchScores(
     return { saved: 0, degraded: true };
   }
   try {
-    const rows = scores.map((s) => ({
-      candidate_id: s.candidate_id,
-      job_posting_id: s.job_id,
-      score: Math.max(0, Math.min(100, Math.round(s.score))),
-      match_reasons: s.reasons,
-      hard_filter_pass: s.hard_filter_pass ?? true,
-    }));
+    // FIX: Math.max/Math.min propagate NaN (Math.min(100, NaN) === NaN), and a
+    // NaN fails the INT column, which aborts the entire all-or-nothing upsert
+    // and loses every row. Non-finite scores are SKIPPED (not coerced to 0) so
+    // one bad row cannot discard the rest of the batch.
+    const rows = scores
+      .filter((s) => Number.isFinite(s.score))
+      .map((s) => ({
+        candidate_id: s.candidate_id,
+        job_posting_id: s.job_id,
+        score: Math.max(0, Math.min(100, Math.round(s.score))),
+        match_reasons: s.reasons,
+        hard_filter_pass: s.hard_filter_pass ?? true,
+      }));
+    if (rows.length === 0) return { saved: 0 };
     const { data, error } = await admin
       .from("match_scores")
       .upsert(rows, { onConflict: "candidate_id,job_posting_id" })
@@ -107,11 +114,21 @@ export async function getTopMatches(
       if (isMissingTableError(error)) return [];
       throw error;
     }
-    return (data ?? []).map((row) => ({
-      job_id: String(row.job_posting_id),
-      score: Number(row.score),
-      reasons: Array.isArray(row.match_reasons) ? row.match_reasons : [],
-    }));
+    // FIX: String(null) produces the literal "null" and Number(null) produces
+    // NaN. Drop rows with a null/undefined job_posting_id and any non-finite
+    // score instead of propagating those sentinels into TopMatch.
+    return (data ?? [])
+      .filter(
+        (row) =>
+          row.job_posting_id !== null &&
+          row.job_posting_id !== undefined &&
+          Number.isFinite(Number(row.score))
+      )
+      .map((row) => ({
+        job_id: String(row.job_posting_id),
+        score: Number(row.score),
+        reasons: Array.isArray(row.match_reasons) ? row.match_reasons : [],
+      }));
   } catch (error) {
     if (isMissingTableError(error)) return [];
     throw error;
