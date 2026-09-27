@@ -1,15 +1,70 @@
 import { scraperSources, getEnabledSources } from "../src/lib/scraper/sources";
 import { scrapeAllSources } from "../src/lib/scraper/engine";
 import { addScrapedJobs, saveScrapeReport, getStorageStats } from "../src/lib/scraper/storage";
+import { WATCHDOG_LOW_RATE_THRESHOLD } from "../src/lib/watchdog";
 import type { ScrapeReport } from "../src/lib/scraper/types";
 
+const USAGE = `Usage: npm run scrape [options]
+
+Options:
+  --source=<id>     Scrape a single source by id
+  --verbose, -v     Print per-source results
+  --dry-run         Run the scrape but write nothing to storage
+  --help, -h        Show this help
+`;
+
+interface CliArgs {
+  sourceId: string | undefined;
+  verbose: boolean;
+  dryRun: boolean;
+  help: boolean;
+}
+
+/**
+ * Strict flag parsing: an unrecognised flag is a hard error rather than being
+ * silently dropped. Silently ignoring a flag gives false confidence — e.g. a
+ * user typing --dry-run would otherwise have the script write anyway.
+ */
+function parseArgs(argv: string[]): CliArgs {
+  const parsed: CliArgs = { sourceId: undefined, verbose: false, dryRun: false, help: false };
+  const unknown: string[] = [];
+
+  for (const arg of argv) {
+    if (arg === "--verbose" || arg === "-v") {
+      parsed.verbose = true;
+    } else if (arg === "--dry-run") {
+      parsed.dryRun = true;
+    } else if (arg === "--help" || arg === "-h") {
+      parsed.help = true;
+    } else if (arg.startsWith("--source=")) {
+      const value = arg.slice("--source=".length);
+      if (!value) unknown.push(arg);
+      else parsed.sourceId = value;
+    } else {
+      unknown.push(arg);
+    }
+  }
+
+  if (unknown.length > 0) {
+    console.error(`Unknown argument(s): ${unknown.join(", ")}`);
+    console.error(USAGE);
+    process.exit(1);
+  }
+
+  return parsed;
+}
+
 async function main() {
-  const args = process.argv.slice(2);
-  const sourceId = args.find((a) => a.startsWith("--source="))?.split("=")[1];
-  const verbose = args.includes("--verbose") || args.includes("-v");
+  const { sourceId, verbose, dryRun, help } = parseArgs(process.argv.slice(2));
+
+  if (help) {
+    console.log(USAGE);
+    return;
+  }
 
   console.log("=== SinotechJobs Scraper ===");
   console.log(`Started at: ${new Date().toISOString()}`);
+  if (dryRun) console.log("Mode: DRY RUN — nothing will be written to storage");
 
   let sources;
   if (sourceId) {
@@ -46,7 +101,15 @@ async function main() {
   const results = await scrapeAllSources(sources);
 
   const allRawJobs = results.flatMap((r) => r.jobs);
-  const { added, skipped, total } = addScrapedJobs(allRawJobs);
+  // Dry run must not write, so measure what WOULD be written instead of calling
+  // the mutating helpers.
+  const { added, skipped, total } = dryRun
+    ? {
+        added: allRawJobs.length,
+        skipped: 0,
+        total: getStorageStats().totalScrapedJobs + allRawJobs.length,
+      }
+    : addScrapedJobs(allRawJobs);
 
   const report: ScrapeReport = {
     timestamp: new Date().toISOString(),
@@ -58,7 +121,11 @@ async function main() {
     results,
   };
 
-  saveScrapeReport(report);
+  if (dryRun) {
+    console.log(`\n[DRY RUN] Would insert ${allRawJobs.length} job(s) and write 1 scrape report.`);
+  } else {
+    saveScrapeReport(report);
+  }
 
   console.log("\n=== Scrape Complete ===");
   console.log(`Timestamp:       ${report.timestamp}`);
@@ -100,6 +167,28 @@ async function main() {
   console.log(`Total scraped jobs: ${stats.totalScrapedJobs}`);
   console.log(`Total reports:      ${stats.reportCount}`);
   console.log(`Last updated:       ${stats.lastUpdated ?? "—"}`);
+
+  // Exit code is a signal to cron/CI: a dead scraper must not report GREEN.
+  //  - 0 successful sources at all => total failure, exit non-zero.
+  //  - success rate below the watchdog's own threshold => non-zero exitCode.
+  //  - otherwise exit 0.
+  const successRate =
+    report.totalSources > 0 ? report.successfulSources / report.totalSources : 0;
+
+  if (report.successfulSources === 0) {
+    console.error(
+      `\nFAILED: 0/${report.totalSources} sources succeeded — scrape produced nothing.`
+    );
+    process.exit(1);
+  }
+
+  if (successRate < WATCHDOG_LOW_RATE_THRESHOLD) {
+    console.error(
+      `FAILED: success rate ${(successRate * 100).toFixed(0)}% is below the watchdog threshold of ${(WATCHDOG_LOW_RATE_THRESHOLD * 100).toFixed(0)}%.`
+    );
+    process.exitCode = 1;
+    return;
+  }
 
   process.exit(0);
 }

@@ -6,14 +6,74 @@
  * Usage:
  *   npx tsx scripts/seed.ts
  *   npm run seed
+ *   npm run seed -- --dry-run
+ *
+ * Safety: refuses to run against a non-local Supabase host unless SEED_FORCE=1
+ * is set explicitly, so a shell carrying production env vars cannot silently
+ * write sample rows into the production jobs table.
  */
 import { sampleJobs } from "@/lib/jobs";
 import { jobToRow } from "@/lib/db/mappers";
 import { createClient } from "@supabase/supabase-js";
 import type { JobRow } from "@/lib/db/types";
 
+const LOCAL_SUPABASE_HOSTS = new Set([
+  "localhost",
+  "127.0.0.1",
+  "0.0.0.0",
+  "::1",
+  "host.docker.internal",
+]);
+
+const USAGE_HINT = "[seed] Usage: npm run seed [-- --dry-run]";
+
+function parseArgs(argv: string[]): { dryRun: boolean; help: boolean; unknown: string[] } {
+  const unknown: string[] = [];
+  let dryRun = false;
+  let help = false;
+  for (const arg of argv) {
+    if (arg === "--dry-run") dryRun = true;
+    else if (arg === "--help" || arg === "-h") help = true;
+    else unknown.push(arg);
+  }
+  return { dryRun, help, unknown };
+}
+
+/**
+ * Extract the host from a Supabase URL and decide whether it is a local/dev target.
+ */
+function isLocalSupabaseUrl(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (LOCAL_SUPABASE_HOSTS.has(host)) return true;
+  // e.g. <ref>.supabase.co is a real (remote) project — anything ending in
+  // .localhost / .local / .test is treated as a local dev instance.
+  return /\.(localhost|local|test|internal)$/.test(host);
+}
+
 async function main(): Promise<void> {
   const total = sampleJobs.length;
+
+  const { dryRun, help, unknown } = parseArgs(process.argv.slice(2));
+  if (unknown.length > 0) {
+    console.error(`[seed] Unknown argument(s): ${unknown.join(", ")}`);
+    console.error(USAGE_HINT);
+    process.exit(1);
+  }
+  if (help) {
+    console.log(USAGE_HINT);
+    console.log("[seed] Env: SEED_FORCE=1 to allow seeding a remote (non-local) Supabase project.");
+    return;
+  }
+
+  if (dryRun) {
+    console.log(`[seed] DRY RUN — would seed ${total} sample jobs; nothing will be written.`);
+  }
+
   console.log(`Seeding ${total} sample jobs...`);
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -23,6 +83,20 @@ async function main(): Promise<void> {
     console.error("Ensure SUPABASE env vars are set: NEXT_PUBLIC_SUPABASE_URL / SUPABASE_URL and SUPABASE_SECRET_KEY");
     process.exit(1);
   }
+
+  // Production guard: the service-role key bypasses RLS, so refuse to point this
+  // at a live project unless the operator explicitly opts in.
+  const force = process.env.SEED_FORCE === "1";
+  if (!isLocalSupabaseUrl(supabaseUrl)) {
+    if (!force) {
+      console.error(`[seed] REFUSING to run: Supabase URL host is not a local/dev host: ${supabaseUrl}`);
+      console.error("[seed] This script uses the RLS-bypassing service-role key.");
+      console.error("[seed] To seed a remote project anyway, set SEED_FORCE=1 explicitly.");
+      process.exit(1);
+    }
+    console.warn(`[seed] SEED_FORCE=1 set — proceeding against remote Supabase: ${supabaseUrl}`);
+  }
+
   const supabase = createClient(supabaseUrl, supabaseKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -47,6 +121,11 @@ async function main(): Promise<void> {
 
     const toInsertJobs = sampleJobs.filter((j) => !existingSet.has(j.id));
     const skipped = total - toInsertJobs.length;
+
+    if (dryRun) {
+      console.log(`[seed] DRY RUN: would insert ${toInsertJobs.length} job(s), skip ${skipped} already present.`);
+      return;
+    }
 
     if (toInsertJobs.length === 0) {
       console.log(`Seeded ${total} jobs, 0 added, ${skipped} skipped (already existed)`);

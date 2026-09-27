@@ -50,6 +50,36 @@ function getTimestamp(report: unknown): string | null {
   return null;
 }
 
+function getTimestampMs(report: unknown): number | null {
+  const ts = getTimestamp(report);
+  if (!ts) return null;
+  const t = new Date(ts).getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
+/**
+ * Single source of truth for "did this run fail?".
+ * A run with zero errors is a success; a run with any error is a failure.
+ * (Used by both computeSuccessRate and shouldAutoDisable so the two can never disagree.)
+ */
+function isRunFailed(result: RawResult): boolean {
+  return ((result.errors ?? []) as string[]).length > 0;
+}
+
+/**
+ * Infrastructure failure: EVERY source errored in the same run (no network / DNS
+ * down / proxy dead). This is not a per-source signal, so the run must not count
+ * toward any source's failure streak.
+ *
+ * Requires more than one source: in a single-source run ("--source=x") "every
+ * source errored" holds trivially, and skipping it would discard a genuine
+ * per-source failure signal.
+ */
+function isInfraFailureRun(results: RawResult[]): boolean {
+  if (results.length <= 1) return false;
+  return results.every((r) => isRunFailed(r));
+}
+
 function getResults(report: unknown): RawResult[] | null {
   if (!report || typeof report !== "object") return null;
   const r = report as Record<string, unknown>;
@@ -78,7 +108,8 @@ function isReEnableFor(report: unknown, sourceId: string): boolean {
  * Compute success rate as successes / examined (0..1).
  * - examines last 20 reports (slice(-20))
  * - filters by windowDays (default 7) using timestamp
- * - for each report, finds result matching sourceId; counts success if errors empty or jobsFiltered>0
+ * - for each report, finds result matching sourceId; counts success if the run has no errors
+ *   (same isRunFailed predicate shouldAutoDisable uses, so the two cannot disagree)
  * - if no history return 0
  */
 export function computeSuccessRate(
@@ -119,10 +150,7 @@ export function computeSuccessRate(
     const found = results.find((rr) => getSourceId(rr) === sourceId);
     if (!found) continue;
     examined++;
-    const errors = (found.errors ?? []) as string[];
-    const jobsFiltered = (found.jobsFiltered ?? 0) as number;
-    const isSuccess = errors.length === 0 || jobsFiltered > 0;
-    if (isSuccess) successes++;
+    if (!isRunFailed(found as RawResult)) successes++;
   }
 
   if (examined === 0) return 0;
@@ -131,37 +159,55 @@ export function computeSuccessRate(
 
 /**
  * Check if source should be auto-disabled: last `consecutive` reports for this source all failed.
- * Failure = errors non-empty or (jobsFound===0 with errors). If fewer than consecutive relevant reports, return false.
- * Handles reEnable dummy reports as success (breaks streak).
+ * Failure = any error in the run (see isRunFailed). If fewer than consecutive relevant reports, return false.
+ *
+ * - A re-enable marker TERMINATES the streak: walking back past one would resurrect stale
+ *   failures and immediately re-disable a source the admin just re-enabled.
+ * - History is limited to `windowDays` (same window computeSuccessRate uses) so ancient
+ *   failures cannot accumulate into a permanent disable.
+ * - Runs where every source errored are infrastructure failures and are skipped entirely.
  */
 export function shouldAutoDisable(
   sourceId: string,
   reports: unknown[],
-  consecutive = 5
+  consecutive = 5,
+  windowDays = 7
 ): boolean {
   if (!Array.isArray(reports) || reports.length === 0) return false;
 
-  // Order most-recent-first: sort descending by timestamp if timestamps are available
-  let ordered: unknown[] = reports;
-  const withTs = reports.filter((r) => getTimestamp(r) !== null);
-  if (withTs.length >= 2) {
-    ordered = [...reports].sort((a, b) => {
-      const ta = getTimestamp(a) ? new Date(getTimestamp(a)!).getTime() : 0;
-      const tb = getTimestamp(b) ? new Date(getTimestamp(b)!).getTime() : 0;
-      return tb - ta;
+  const now = Date.now();
+  const windowMs = windowDays * 24 * 60 * 60 * 1000;
+
+  let inWindow: unknown[] = reports;
+  if (typeof windowDays === "number" && windowDays > 0) {
+    inWindow = reports.filter((r) => {
+      const t = getTimestampMs(r);
+      // Untimestamped entries are re-enable markers written at action time — keep them.
+      if (t === null) return true;
+      return now - t <= windowMs;
     });
   }
+
+  // Order most-recent-first. A report with no usable timestamp is a synthetic marker
+  // written when the admin acted, so treat it as the NEWEST — never sort it into the
+  // past, where the walk would step over it and read pre-existing failures.
+  const ordered = [...inWindow].sort((a, b) => {
+    const ta = getTimestampMs(a) ?? Number.POSITIVE_INFINITY;
+    const tb = getTimestampMs(b) ?? Number.POSITIVE_INFINITY;
+    return tb - ta;
+  });
 
   const relevant: RawResult[] = [];
 
   for (const r of ordered) {
-    if (isReEnableFor(r, sourceId)) {
-      relevant.push({ jobsFound: 1, jobsFiltered: 1, errors: [] } as RawResult);
-      if (relevant.length >= consecutive) break;
-      continue;
-    }
+    // A re-enable marker ends the streak outright: nothing older than it matters.
+    if (isReEnableFor(r, sourceId)) break;
+
     const results = getResults(r);
     if (!results) continue;
+    // Whole-run infrastructure failure: does not count toward any source's streak.
+    if (isInfraFailureRun(results)) continue;
+
     const found = results.find((rr) => getSourceId(rr) === sourceId);
     if (found) {
       relevant.push(found as RawResult);
@@ -171,15 +217,8 @@ export function shouldAutoDisable(
 
   if (relevant.length < consecutive) return false;
 
-  const slice = relevant.slice(0, consecutive);
-  for (const res of slice) {
-    const errors = (res.errors ?? []) as string[];
-    const jobsFound = (res.jobsFound ?? 0) as number;
-    const isFailed = errors.length > 0 || (jobsFound === 0 && errors.length > 0);
-    // success if no errors
-    if (!isFailed) return false;
-    // also consider jobsFiltered>0 as success even with errors? For disable we require errors => consistent with computeSuccessRate OR logic
-    // If errors empty, not failed; if errors>0 but jobsFiltered>0 we still treat as failure? Keep strict: any errors => failure
+  for (const res of relevant) {
+    if (!isRunFailed(res)) return false;
   }
   return true;
 }
@@ -227,7 +266,7 @@ export function buildHealthMatrix(
         lastJobsFiltered: 0,
         lastError: null,
         lastRunAt: null,
-        successRate: examinedHasHistory(anyReports, source.id) ? successRate : 0,
+        successRate,
         avgDurationMs: null,
         isDisabled,
       };
@@ -262,14 +301,4 @@ export function buildHealthMatrix(
       isDisabled,
     };
   });
-}
-
-function examinedHasHistory(reports: unknown[], sourceId: string): boolean {
-  for (const r of reports) {
-    if (isReEnableFor(r, sourceId)) return true;
-    const results = getResults(r);
-    if (!results) continue;
-    if (results.find((rr) => getSourceId(rr) === sourceId)) return true;
-  }
-  return false;
 }
