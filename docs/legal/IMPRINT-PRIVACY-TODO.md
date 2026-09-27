@@ -35,7 +35,7 @@
 - [ ] 薪资必填规则（§7.5 EU Pay Transparency：所有职位须含最低薪资，2026-06 指令大限前已生效）
 - [ ] 雇主广告合规责任条款 + 违规下架流程
 - [ ] 变更通知期 14 天 + 版本号/生效日更新流程（`legal_documents.version`）
-- [ ] `user_acceptances` 表（如需接受记录）：`004_matching_legal.sql` 未建表；`005_job_expiry.sql` 已占用 005（jobs 的 `expires_at` / `is_expired`），下一个可用编号为 `006`
+- [ ] `user_acceptances` 表（如需接受记录）：`004_matching_legal.sql` 未建表；`005_job_expiry.sql` 已占用 005（jobs 的 `expires_at` / `is_expired`），`006_lock_profile_role.sql` 已占用 006（锁定 `profiles.role`），下一个可用编号为 `007`
 
 ## 4. DPA + Cookie（§7.2/7.4 剩余文档）
 

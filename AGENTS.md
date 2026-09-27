@@ -146,6 +146,7 @@ The `/admin` **scraper dashboard** is a different mechanism: the operator pastes
 - `next.config.ts` deliberately sets **no** `Content-Security-Policy`. Next.js emits inline bootstrap and streamed scripts, so a static CSP breaks every page. A correct CSP needs per-request nonces minted in middleware and threaded through — separate work. Do not "fix" this by adding a static CSP.
 - Rate-limit public write paths. Authenticated routes key on the session user id; public routes key on client IP.
 - `content/blog` slugs are validated with `path.basename` to reject traversal.
+- The `admin` role has no self-service provisioning path in application code — no route, signup trigger, or client can set it; grant it with `npm run promote-admin` (§6). As of `006_lock_profile_role.sql` the `profiles.role` column is immutable to signed-in users, subject to §8.4.
 
 ---
 
@@ -187,9 +188,9 @@ sinotechjobs/
 │       ├── db/                     # client, jobs-repo, reports-repo, email-repo, mappers, types
 │       └── scraper/                # types, engine, storage, sources, keywords, health, puppeteer
 ├── tests/                          # 23 vitest files, 1770 tests
-├── scripts/                        # scrape.ts, seed.ts, generate-og.sh, measure-build.sh
+├── scripts/                        # scrape.ts, seed.ts, promote-admin.ts, generate-og.sh, measure-build.sh
 ├── content/blog/                   # 2 markdown posts (blue-card-visa-guide, dach-salary-benchmarks-2026)
-├── db/migrations/                  # 001..005, apply in order
+├── db/migrations/                  # 001..006, apply in order
 ├── docs/                           # PRD.md, build-report.md, sources-compliance.md, og-pipeline.*, legal/, plans/
 ├── data/                           # JSON fallback ONLY (local). Committed file is empty: {"jobs": []}
 ├── vercel.json                     # one cron: daily 06:00 UTC → /api/cron/daily
@@ -224,6 +225,7 @@ sinotechjobs/
 | `003_candidate_features.sql` | `candidate_profiles`, `saved_jobs`, `saved_filters`, `applications`, `cvs` + policies |
 | `004_matching_legal.sql` | `match_scores`, `notifications`, versioned trilingual `legal_documents` (ToS/Privacy seeds are abbreviated placeholders) |
 | `005_job_expiry.sql` | `jobs.expires_at` (default +60d) and `jobs.is_expired`; `listJobs` filters expired by default, daily cron flags overdue rows |
+| `006_lock_profile_role.sql` | Closes a privilege-escalation path: any signed-in user could set their own `profiles.role` to `admin` via PostgREST directly, because the 002 UPDATE policy constrained row ownership only and never mentioned `role`. Revokes `UPDATE (role)` from `authenticated` and pins the policy's `WITH CHECK` to the stored role |
 
 ---
 
@@ -262,6 +264,14 @@ curl -X POST -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: applicati
 
 ### Sample-data seeding — NOT a routine step
 `npm run seed` upserts the deprecated `sampleJobs` array from `src/lib/jobs.ts`. Nothing serves them in production. The script refuses to write to a non-local Supabase host unless `SEED_FORCE=1` is set explicitly. There is no reason to run it for an ordinary task; do not put it on a deployment checklist.
+
+### Admin promotion
+`npm run promote-admin -- <email>` is the only supported way to grant the `admin` role. It resolves the user by **email lookup** (paging `auth.users`, since `profiles` has no email column) using the service-role key, and can only ever assign `admin`; `--revoke` demotes back to `employer`. It refuses non-local Supabase hosts unless `PROMOTE_ADMIN_FORCE=1` is set explicitly, and supports `--dry-run`.
+```bash
+npm run promote-admin -- you@example.com --dry-run
+npm run promote-admin -- you@example.com
+npm run promote-admin -- you@example.com --revoke
+```
 
 ### Deploy
 ```bash

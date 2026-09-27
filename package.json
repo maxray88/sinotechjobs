@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed": "npx tsx --env-file=.env.local scripts/seed.ts"
+    "seed": "npx tsx --env-file=.env.local scripts/seed.ts",
+    "promote-admin": "npx tsx --env-file=.env.local scripts/promote-admin.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.54.0",

@@ -22,7 +22,7 @@ export type SavedFilterInput = DigestFilter;
 
 /**
  * Return true if job matches a single filter.
- * All defined fields must match (AND). q is substring case-insensitive across title, titleZh, company, description, descriptionZh, tags, location.
+ * All defined fields must match (AND). q is substring case-insensitive across title, titleZh, company, companyZh, location, description, descriptionZh, tags, requirements, requirementsZh.
  */
 export function matchesFilter(job: Job, filter: DigestFilter): boolean {
   if (filter.field && job.field !== filter.field) return false;
@@ -76,6 +76,7 @@ export async function buildDigestForUser(
     .from("jobs")
     .select("*")
     .gte("created_at", since.toISOString())
+    .order("created_at", { ascending: false })
     .limit(100);
 
   if (error) {
