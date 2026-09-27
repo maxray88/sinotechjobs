@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, getProfileRole } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/db/client";
 import { sendEmail, isValidRecipient } from "@/lib/email";
+import { checkRateLimit } from "@/lib/ratelimit";
 
 // Ordered fallback fields, most authoritative first.
 const FALLBACK_EMAIL_FIELDS = ["contact_email", "email", "applicant_email"] as const;
+
+// This route only carries an id, an action and a <=500 char reason.
+const MAX_BODY_BYTES = 8_192;
 
 /**
  * Pick the first candidate that is actually deliverable.
@@ -40,9 +44,33 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
+  // Approve/reject is the highest-value write in the app (it publishes a job), so
+  // it is rate limited too. Keyed on the admin's session user id rather than the
+  // client IP: this route is only reachable by an authenticated admin, and IP
+  // keying would let one admin exhaust the budget for everyone behind the same NAT.
+  const { allowed, retryAfterMs } = checkRateLimit(`admin-postings:${user.id}`, 60, 60_000);
+  if (!allowed) {
+    const retryAfter = Math.ceil((retryAfterMs ?? 0) / 1000);
+    return NextResponse.json(
+      { error: "rate_limited", retryAfter },
+      { status: 429, headers: { "Retry-After": String(retryAfter) } }
+    );
+  }
+
   let body: unknown;
   try {
-    body = await request.json();
+    // Reject oversized bodies before they are buffered. App Router handlers impose
+    // no default body cap, so an absent Content-Length (chunked) is caught by the
+    // length check on the buffered text below instead.
+    const declaredLength = Number(request.headers.get("content-length") ?? "");
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+      return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+    }
+    const raw = await request.text();
+    if (raw.length > MAX_BODY_BYTES) {
+      return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+    }
+    body = JSON.parse(raw);
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -145,25 +173,79 @@ export async function POST(request: NextRequest) {
         updated_at: nowIso,
       };
 
-      const { error: insertError } = await supabase.from("jobs").insert(jobRow);
-
-      if (insertError) {
-        console.error("[POST /api/admin/postings] jobs insert error", insertError);
-        return NextResponse.json({ error: "internal" }, { status: 500 });
-      }
-
-      const { error: updateError } = await supabase
+      // 1. Claim the posting atomically FIRST. The `status = 'pending'` predicate
+      //    is what makes this safe under concurrency: the read at the top of this
+      //    handler is advisory only, so whichever request updates the row first
+      //    wins and the loser updates zero rows and must not publish anything.
+      const { data: claimed, error: claimError } = await supabase
         .from("employer_postings")
         .update({
           status: "approved",
           reviewed_at: nowIso,
           rejection_reason: null,
         })
-        .eq("id", posting.id);
+        .eq("id", posting.id)
+        .eq("status", "pending")
+        .select("id");
 
-      if (updateError) {
-        console.error("[POST /api/admin/postings] posting update error", updateError);
-        // Attempt to rollback? Keep job inserted but report error
+      if (claimError) {
+        console.error("[POST /api/admin/postings] approve update error", claimError, "posting", posting.id);
+        return NextResponse.json({ error: "internal" }, { status: 500 });
+      }
+
+      // PostgREST returns the rows the UPDATE actually touched when .select() is
+      // chained. An empty array means the `status = 'pending'` guard matched
+      // nothing: a concurrent request already handled this posting.
+      //
+      // Fail closed. `Array.isArray(claimed) && claimed.length === 0` only
+      // catches a *present but empty* array, so any payload that is absent or
+      // null fell through the guard and the posting was published anyway. We
+      // cannot prove rows were claimed, so we must assume they were not.
+      if ((claimed?.length ?? 0) === 0) {
+        console.warn("[POST /api/admin/postings] approve lost race — posting", posting.id, "was already reviewed");
+        return NextResponse.json({ error: "conflict: already reviewed", ok: false }, { status: 409 });
+      }
+
+      // 2. Only now publish. Inserting after the claim means a failure here is
+      //    recoverable: the posting is rolled back to pending below so a retry
+      //    starts from a clean state, rather than leaving a published jobs row
+      //    behind a still-pending posting and colliding with the `manual-<id>`
+      //    primary key on every subsequent retry.
+      const { error: insertError } = await supabase.from("jobs").insert(jobRow);
+
+      if (insertError) {
+        console.error(
+          "[POST /api/admin/postings] jobs insert error — rolling posting back to pending",
+          insertError,
+          "posting",
+          posting.id,
+          "jobId",
+          jobId
+        );
+        // Best effort. A stuck row here needs manual repair, so say so loudly
+        // rather than reporting a clean 500.
+        try {
+          const { error: rollbackError } = await supabase
+            .from("employer_postings")
+            .update({ status: "pending", reviewed_at: null })
+            .eq("id", posting.id)
+            .eq("status", "approved");
+          if (rollbackError) {
+            console.error(
+              "[POST /api/admin/postings] rollback FAILED — posting",
+              posting.id,
+              "is left approved with no jobs row and needs manual repair",
+              rollbackError
+            );
+          }
+        } catch (rollbackErr) {
+          console.error(
+            "[POST /api/admin/postings] rollback threw — posting",
+            posting.id,
+            "is left approved with no jobs row and needs manual repair",
+            rollbackErr
+          );
+        }
         return NextResponse.json({ error: "internal" }, { status: 500 });
       }
 
@@ -198,18 +280,30 @@ export async function POST(request: NextRequest) {
     } else {
       // REJECT
       const trimmedReason = (reason as string).trim();
-      const { error: updateError } = await supabase
+      // Same atomic guard as the approve branch: re-assert `pending` in the
+      // UPDATE so a concurrent approve cannot be overwritten to rejected after
+      // the job has already gone live.
+      const { data: claimed, error: updateError } = await supabase
         .from("employer_postings")
         .update({
           status: "rejected",
           rejection_reason: trimmedReason,
           reviewed_at: nowIso,
         })
-        .eq("id", posting.id);
+        .eq("id", posting.id)
+        .eq("status", "pending")
+        .select("id");
 
       if (updateError) {
-        console.error("[POST /api/admin/postings] reject update error", updateError);
+        console.error("[POST /api/admin/postings] reject update error", updateError, "posting", posting.id);
         return NextResponse.json({ error: "internal" }, { status: 500 });
+      }
+
+      // Same fail-closed reasoning as the approve branch: a rejected posting
+      // must never overwrite an approve that already went live.
+      if ((claimed?.length ?? 0) === 0) {
+        console.warn("[POST /api/admin/postings] reject lost race — posting", posting.id, "was already reviewed");
+        return NextResponse.json({ error: "conflict: already reviewed", ok: false }, { status: 409 });
       }
 
       // Fire-and-forget rejection email (non-blocking)

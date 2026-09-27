@@ -5,6 +5,10 @@ import { postingSchema } from "@/lib/validations/posting";
 import { sendEmail } from "@/lib/email";
 import { checkRateLimit, getClientIp } from "@/lib/ratelimit";
 
+// Bilingual title/description plus requirements. Generous for a single posting,
+// but bounded so a fat body is rejected before it is buffered.
+const MAX_BODY_BYTES = 32_768;
+
 export async function POST(request: NextRequest) {
   const ip = getClientIp(request);
   const { allowed, retryAfterMs } = checkRateLimit(ip, 10, 60_000);
@@ -23,7 +27,18 @@ export async function POST(request: NextRequest) {
 
   let body: unknown;
   try {
-    body = await request.json();
+    // Reject oversized bodies before they are buffered. App Router handlers impose
+    // no default body cap, so an absent Content-Length (chunked) is caught by the
+    // length check on the buffered text below instead.
+    const declaredLength = Number(request.headers.get("content-length") ?? "");
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+      return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+    }
+    const raw = await request.text();
+    if (raw.length > MAX_BODY_BYTES) {
+      return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+    }
+    body = JSON.parse(raw);
   } catch {
     return NextResponse.json(
       { error: "validation", details: [{ path: "body", message: "Invalid JSON", code: "invalid_json" }] },

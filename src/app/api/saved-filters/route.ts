@@ -4,8 +4,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/db/client";
+import { checkRateLimit } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
+
+// A saved filter is a name plus a small filter object.
+const MAX_BODY_BYTES = 8_192;
+
+// Cap on saved filters per user. Unbounded rows inflate the digest fan-out
+// (one user = one email per weekly run) and the filter list inside that email.
+// The cap rejects rather than evicts: a silently deleted filter is data loss
+// the user never agreed to, and DELETE already exists to free a slot.
+const MAX_SAVED_FILTERS_PER_USER = 20;
 
 // Zod schemas for filters
 const filterSchema = z
@@ -59,9 +69,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  // Keyed on the session user id: this route is only reachable when
+  // authenticated, and IP keying would let one user exhaust a shared NAT's budget.
+  const { allowed, retryAfterMs } = checkRateLimit(`saved-filters:${user.id}`, 30, 60_000);
+  if (!allowed) {
+    const retryAfter = Math.ceil((retryAfterMs ?? 0) / 1000);
+    return NextResponse.json(
+      { error: "rate_limited", retryAfter },
+      { status: 429, headers: { "Retry-After": String(retryAfter) } }
+    );
+  }
+
   let body: unknown;
   try {
-    body = await request.json();
+    // Reject oversized bodies before they are buffered. App Router handlers impose
+    // no default body cap, so an absent Content-Length (chunked) is caught by the
+    // length check on the buffered text below instead.
+    const declaredLength = Number(request.headers.get("content-length") ?? "");
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+      return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+    }
+    const raw = await request.text();
+    if (raw.length > MAX_BODY_BYTES) {
+      return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+    }
+    body = JSON.parse(raw);
   } catch {
     return NextResponse.json({ error: "validation", details: "Invalid JSON" }, { status: 400 });
   }
@@ -80,6 +112,28 @@ export async function POST(request: NextRequest) {
 
   try {
     const supabase = getSupabaseAdmin();
+
+    const { count, error: countError } = await supabase
+      .from("saved_filters")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id);
+
+    if (countError) {
+      console.error("[POST /api/saved-filters] count error", countError);
+      return NextResponse.json({ error: "internal" }, { status: 500 });
+    }
+
+    if ((count ?? 0) >= MAX_SAVED_FILTERS_PER_USER) {
+      return NextResponse.json(
+        {
+          error: "limit_reached",
+          limit: MAX_SAVED_FILTERS_PER_USER,
+          details: `You can save at most ${MAX_SAVED_FILTERS_PER_USER} filters. Delete one to save another.`,
+        },
+        { status: 409 }
+      );
+    }
+
     const { data, error } = await supabase
       .from("saved_filters")
       .insert({
