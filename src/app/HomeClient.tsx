@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useLang } from "@/components/LanguageProvider";
 import EmailCapture from "@/components/EmailCapture";
 import Link from "next/link";
@@ -8,9 +9,16 @@ import type { Job } from "@/lib/types";
 export default function HomeClient({ allJobs }: { allJobs: Job[] }) {
   const { t, lang } = useLang();
   const jobCount = allJobs.length;
-  const companyCount = new Set(allJobs.map((j) => j.company)).size;
-  const locationCount = new Set(allJobs.map((j) => j.locationCode)).size;
-  const featured = [...allJobs].sort((a,b)=> (b.id.startsWith('scraped-')?1:0) - (a.id.startsWith('scraped-')?1:0)).filter(j=>j.featured || j.id.startsWith('scraped-')).slice(0,3);
+  const { companyCount, locationCount, featured } = useMemo(() => {
+    return {
+      companyCount: new Set(allJobs.map((j) => j.company)).size,
+      locationCount: new Set(allJobs.map((j) => j.locationCode)).size,
+      featured: [...allJobs]
+        .sort((a, b) => (b.id.startsWith("scraped-") ? 1 : 0) - (a.id.startsWith("scraped-") ? 1 : 0))
+        .filter((j) => (j.featured || j.id.startsWith("scraped-")) && !j.isExpired)
+        .slice(0, 3),
+    };
+  }, [allJobs]);
 
   return (
     <div>
@@ -147,6 +155,7 @@ export default function HomeClient({ allJobs }: { allJobs: Job[] }) {
               <Link key={job.id} href={`/jobs/${job.id}`} className="card" style={{ textDecoration: "none", color: "inherit" }}>
                 <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", flexWrap: "wrap" }}>
                   {job.featured && <span className="badge-featured">{t.jobs.featured}</span>}
+                  {job.isExpired && <span className="badge-expired">{t.jobs.expired}</span>}
                   {job.remoteFriendly && <span className="badge-remote">Remote</span>}
                   {job.visaSponsorship && <span className="badge-visa">Visa</span>}
                 </div>
@@ -157,7 +166,7 @@ export default function HomeClient({ allJobs }: { allJobs: Job[] }) {
                   {job.company} · {job.location}
                 </p>
                 <div style={{ display: "flex", gap: "0.375rem", flexWrap: "wrap" }}>
-                  {job.tags.slice(0, 3).map((tag) => (
+                  {Array.from(new Set(job.tags)).slice(0, 3).map((tag) => (
                     <span key={tag} className="tag">{tag}</span>
                   ))}
                 </div>

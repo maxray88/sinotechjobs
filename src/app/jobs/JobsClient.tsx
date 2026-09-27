@@ -13,6 +13,7 @@ import {
   type CandidateProfile,
   type FocusArea,
 } from "@/lib/matching";
+import { FOCUS_AREA_TAXONOMY } from "@/lib/taxonomy";
 
 const FIELD_TO_FOCUS: Record<JobField, FocusArea> = {
   ai: "ai_ml",
@@ -24,14 +25,37 @@ const FIELD_TO_FOCUS: Record<JobField, FocusArea> = {
 
 const MATCH_BADGE_THRESHOLD = 70;
 
-function buildDemoCandidate(field: JobField | undefined, subTags: string[]): CandidateProfile {
+/** Picked once at module load: the first focus area declared in the taxonomy. */
+const DEFAULT_FOCUS_FIELD = Object.keys(FOCUS_AREA_TAXONOMY)[0] as JobField;
+
+/** Most frequent location across a job list, so the demo profile can target it. */
+function mostCommonLocation(jobs: Job[]): string | undefined {
+  const counts = new Map<string, number>();
+  let best: string | undefined;
+  let bestCount = 0;
+  for (const job of jobs) {
+    const next = (counts.get(job.location) ?? 0) + 1;
+    counts.set(job.location, next);
+    if (next > bestCount) {
+      bestCount = next;
+      best = job.location;
+    }
+  }
+  return best;
+}
+
+function buildDemoCandidate(
+  field: JobField | undefined,
+  subTags: string[],
+  desiredLocation: string,
+): CandidateProfile {
   return {
     id: "demo",
     full_name: "Demo Candidate",
     current_location: "Berlin",
-    desired_location: ["Berlin"],
+    desired_location: [desiredLocation],
     visa_status: "eu_citizen",
-    focus_area: field ? FIELD_TO_FOCUS[field] : "ai_ml",
+    focus_area: FIELD_TO_FOCUS[field ?? DEFAULT_FOCUS_FIELD],
     sub_specializations: subTags,
     years_of_experience: 5,
     current_role: "Engineer",
@@ -47,12 +71,27 @@ function buildDemoCandidate(field: JobField | undefined, subTags: string[]): Can
   };
 }
 
-/** Flexible overlap: exact, case-insensitive, or either side contains the other. */
-function tagOverlaps(jobTags: string[], subTags: string[]): boolean {
+/** Exact match always wins; substring only when the shorter tag is 4+ chars at a word boundary. */
+export function tagOverlaps(jobTags: string[], subTags: string[]): boolean {
   const lower = jobTags.map((t) => t.toLowerCase());
   return subTags.some((sub) => {
     const s = sub.toLowerCase();
-    return lower.some((t) => t === s || t.includes(s) || s.includes(t));
+    return lower.some((t) => {
+      if (t === s) return true;
+      const shorter = t.length < s.length ? t : s;
+      const longer = shorter === t ? s : t;
+      if (shorter.length < 4) return false;
+      let from = 0;
+      for (;;) {
+        const idx = longer.indexOf(shorter, from);
+        if (idx === -1) return false;
+        const before = idx === 0 ? "" : longer[idx - 1];
+        const after = longer[idx + shorter.length] ?? "";
+        const atBoundary = !/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after);
+        if (atBoundary) return true;
+        from = idx + 1;
+      }
+    });
   });
 }
 
@@ -67,7 +106,7 @@ export default function JobsClient({ allJobs }: { allJobs: Job[] }) {
       const matchesSearch =
         !search ||
         job.title.toLowerCase().includes(searchLower) ||
-        job.titleZh.includes(search) ||
+        (job.titleZh ?? "").toLowerCase().includes(searchLower) ||
         job.company.toLowerCase().includes(searchLower) ||
         job.tags.some((tag) => tag.toLowerCase().includes(searchLower));
 
@@ -96,18 +135,17 @@ export default function JobsClient({ allJobs }: { allJobs: Job[] }) {
   }, [allJobs, search, filters]);
 
   const matchByJobId = useMemo(() => {
-    const candidate = buildDemoCandidate(filters.field, filters.subTags ?? []);
+    // One immutable profile for every card, so scores stay comparable across
+    // jobs. The focus area and desired location are resolved once here, never
+    // retro-fitted to whichever job is being scored.
+    const candidate = buildDemoCandidate(
+      filters.field,
+      filters.subTags ?? [],
+      mostCommonLocation(filteredJobs) ?? "Berlin",
+    );
     const map = new Map<string, { score: number; reasons: string[] }>();
     for (const job of filteredJobs) {
       const criteria = adaptJob(job);
-      if (!filters.field) {
-        // No field filter: align candidate focus with the job so the hard
-        // focus-area gate doesn't zero every score.
-        candidate.focus_area = criteria.focus_area;
-      }
-      // Align desired location with the job location string so the demo
-      // score reflects soft-signal fit rather than the hard location gate.
-      candidate.desired_location = [criteria.location];
       const result = computeMatchScore(candidate, criteria);
       if (result.hardFilterPass && result.score >= MATCH_BADGE_THRESHOLD) {
         map.set(job.id, { score: result.score, reasons: result.reasons });
@@ -121,7 +159,10 @@ export default function JobsClient({ allJobs }: { allJobs: Job[] }) {
       <h1 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "0.5rem" }}>
         {t.jobs.title}
       </h1>
-      <p style={{ color: "var(--muted-foreground)", marginBottom: "2rem", fontSize: "0.875rem" }}>
+      <p
+        role="status"
+        style={{ color: "var(--muted-foreground)", marginBottom: "2rem", fontSize: "0.875rem" }}
+      >
         {filteredJobs.length} {lang === "zh" ? "个职位" : lang === "de" ? "Jobs" : "jobs found"}
       </p>
 
@@ -132,6 +173,7 @@ export default function JobsClient({ allJobs }: { allJobs: Job[] }) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={t.jobs.filters.search}
+          aria-label={t.jobs.filters.search}
           style={{
             width: "100%",
             padding: "0.75rem 1rem",

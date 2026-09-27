@@ -3,7 +3,7 @@
 import { useLang } from "@/components/LanguageProvider";
 import Link from "next/link";
 import SaveButton from "@/components/SaveButton";
-import type { Job, JobField, EmploymentType } from "@/lib/types";
+import type { Job, JobField } from "@/lib/types";
 
 export default function JobDetailClient({ job }: { job: Job }) {
   const { t, lang } = useLang();
@@ -18,6 +18,7 @@ export default function JobDetailClient({ job }: { job: Job }) {
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return "—";
     if (lang === "zh") return `${date.getMonth() + 1}月${date.getDate()}日`;
     if (lang === "de") return `${date.getDate()}.${date.getMonth() + 1}.${date.getFullYear()}`;
     return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -27,6 +28,10 @@ export default function JobDetailClient({ job }: { job: Job }) {
   const requirements = lang === "zh" ? job.requirementsZh : job.requirements;
   const title = lang === "zh" ? job.titleZh : job.title;
   const companyName = lang === "zh" && job.companyZh ? job.companyZh : job.company;
+  const applyUrl = safeExternalUrl(job.applicationUrl);
+  // Scraped employment types can fall outside the typed union; fall back to
+  // the raw value rather than rendering `undefined`.
+  const employmentLabel = t.jobs.employmentTypes[job.employmentType] ?? job.employmentType;
 
   return (
     <div style={{ maxWidth: "850px", margin: "0 auto", padding: "2rem 1.5rem" }}>
@@ -80,7 +85,7 @@ export default function JobDetailClient({ job }: { job: Job }) {
           </span>
           <span>
             <strong style={{ color: "var(--foreground)" }}>{t.jobs.filters.employmentType}:</strong>{" "}
-            {t.jobs.employmentTypes[job.employmentType as EmploymentType]}
+            {employmentLabel}
           </span>
           {job.salaryRange && (
             <span>
@@ -90,15 +95,26 @@ export default function JobDetailClient({ job }: { job: Job }) {
         </div>
 
         <div style={{ marginTop: "1.5rem", display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
-          <a
-            href={job.applicationUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-accent"
-            style={{ display: "inline-block" }}
-          >
-            {t.jobs.applyNow} →
-          </a>
+          {applyUrl ? (
+            <a
+              href={applyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-accent"
+              style={{ display: "inline-block" }}
+            >
+              {t.jobs.applyNow} →
+            </a>
+          ) : (
+            <button
+              type="button"
+              className="btn-accent"
+              disabled
+              style={{ display: "inline-block" }}
+            >
+              {t.jobs.applyUnavailable}
+            </button>
+          )}
           <SaveButton jobId={job.id} size="md" />
         </div>
       </div>
@@ -130,6 +146,7 @@ export default function JobDetailClient({ job }: { job: Job }) {
               }}
             >
               <span
+                aria-hidden="true"
                 style={{
                   position: "absolute",
                   left: 0,
@@ -151,7 +168,7 @@ export default function JobDetailClient({ job }: { job: Job }) {
           {t.jobs.tags}
         </h2>
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-          {job.tags.map((tag) => (
+          {Array.from(new Set(job.tags)).map((tag) => (
             <span key={tag} className="tag">{tag}</span>
           ))}
         </div>
@@ -159,3 +176,4 @@ export default function JobDetailClient({ job }: { job: Job }) {
     </div>
   );
 }
+import { safeExternalUrl } from "@/lib/safe-url";

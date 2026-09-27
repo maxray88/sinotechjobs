@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type {
   EmploymentType,
@@ -93,18 +93,39 @@ const EMPLOYMENT_OPTIONS: { value: EmploymentType; label: Record<Language, strin
 
 const FOCUS_AREAS = Object.keys(FOCUS_AREA_TAXONOMY) as FocusArea[];
 
+/** Structural equality, comparing subTags arrays by content. */
+function sameFilters(a: SearchFiltersState, b: SearchFiltersState): boolean {
+  const keys = Object.keys({ ...a, ...b }) as (keyof SearchFiltersState)[];
+  return keys.every((key) => {
+    const av = a[key];
+    const bv = b[key];
+    if (Array.isArray(av) || Array.isArray(bv)) {
+      const aa = Array.isArray(av) ? av : [];
+      const ba = Array.isArray(bv) ? bv : [];
+      return aa.length === ba.length && aa.every((v, i) => v === ba[i]);
+    }
+    return av === bv;
+  });
+}
+
 export default function SearchFilters({
   lang = "en",
   initialFilters,
   onFiltersChange,
 }: SearchFiltersProps) {
-  const [filters, setFilters] = useState<SearchFiltersState>(initialFilters ?? {});
+  const [filters, setFilters] = useState<SearchFiltersState>(() => initialFilters ?? {});
   const [showFilters, setShowFilters] = useState(true);
+  const lastEmitted = useRef<SearchFiltersState>(filters);
   const t = UI_TEXT[lang];
 
   function update(next: SearchFiltersState) {
     setFilters(next);
-    onFiltersChange(next);
+    // Skip no-op updates so the parent's memos are not invalidated by a fresh
+    // object identity when no filter value actually changed.
+    if (!sameFilters(lastEmitted.current, next)) {
+      lastEmitted.current = next;
+      onFiltersChange(next);
+    }
   }
 
   function toggleField(area: JobField) {
