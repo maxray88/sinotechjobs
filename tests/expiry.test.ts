@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -27,7 +27,7 @@ function chainable(result: any, extra: Record<string, any> = {}) {
     calls[name].push(args);
     return b;
   };
-  for (const m of ["select", "eq", "order", "range", "lt", "in", "limit"]) b[m] = rec(m);
+  for (const m of ["select", "eq", "or", "order", "range", "lt", "in", "limit"]) b[m] = rec(m);
   b.update = vi.fn((...args: unknown[]) => {
     calls["update"] = calls["update"] || [];
     (calls["update"] as unknown[][]).push(args);
@@ -42,6 +42,74 @@ function chainable(result: any, extra: Record<string, any> = {}) {
   b.then = (onF: any, onR: any) => Promise.resolve(result).then(onF, onR);
   Object.assign(b, extra);
   return { builder: b, calls };
+}
+
+// The real client accepts a single string or an array of clauses for .or();
+// normalise both so the assertions read the emitted PostgREST `or=` value.
+function asClauseString(arg: unknown): string {
+  if (typeof arg === "string") return arg;
+  if (Array.isArray(arg)) {
+    return arg.filter((c): c is string => typeof c === "string").join(",");
+  }
+  throw new Error(`unexpected .or() argument: ${JSON.stringify(arg)}`);
+}
+
+function splitTopLevel(input: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let cur = "";
+  for (const ch of input) {
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    if (ch === "," && depth === 0) {
+      out.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+function evaluateAnd(part: string, row: Record<string, unknown>): boolean {
+  const cond = part.trim();
+  const wrapped = /^and\(([\s\S]*)\)$/.exec(cond);
+  if (wrapped) return splitTopLevel(wrapped[1]).every((sub) => evaluateAnd(sub, row));
+  return evaluateCondition(cond, row);
+}
+
+function evaluateCondition(cond: string, row: Record<string, unknown>): boolean {
+  const m = /^([A-Za-z0-9_.]+)\.(is\.null|gte\.[^.]+|ilike\..+)$/.exec(cond);
+  if (!m) throw new Error(`unsupported PostgREST condition: ${cond}`);
+  const col = m[1];
+  const op = m[2];
+  const value = row[col];
+  if (op === "is.null") return value === null || value === undefined;
+  if (op.startsWith("gte.")) {
+    // SQL three-valued logic: NULL >= bound is NULL, which is never true.
+    if (value === null || value === undefined) return false;
+    return String(value) >= op.slice(4);
+  }
+  const pattern = op
+    .slice("ilike.".length)
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/%/g, "[\\s\\S]*");
+  return new RegExp(`^${pattern}$`, "i").test(String(value ?? ""));
+}
+
+// Minimal evaluator for the `or=` grammar that jobs-repo emits. Throws on any
+// shape it does not understand, so it can never silently pass a clause it did
+// not actually evaluate.
+function evaluateOrClause(clause: string, row: Record<string, unknown>): boolean {
+  return splitTopLevel(clause).some((part) => evaluateAnd(part, row));
+}
+
+// postgrest-js appends one `or=` param per .or() call and PostgREST ANDs
+// multiple top-level params, so a query built from several .or() calls keeps a
+// row only when every one of its groups matches.
+function evaluateOrGroups(groups: string[], row: Record<string, unknown>): boolean {
+  return groups.every((group) => evaluateOrClause(group, row));
 }
 
 beforeEach(() => {
@@ -121,6 +189,115 @@ describe("listJobs expiry filter", () => {
     mockGetSupabaseAdmin.mockReturnValue({ from: vi.fn(() => builder) } as any);
     await listJobs({ includeExpired: true });
     expect((calls["eq"] ?? []).some((a) => a[0] === "is_expired")).toBe(false);
+  });
+});
+
+describe("expires_at NULL semantics (never expires)", () => {
+  const FROZEN = "2026-09-27";
+
+  beforeEach(() => {
+    // jobs-repo derives `today` from new Date(); freeze it so the emitted
+    // clause is deterministic and cannot flake across a midnight boundary.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(`${FROZEN}T12:00:00Z`));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("keeps NULL expires_at, drops past dates, and never uses a bare .lt()", async () => {
+    const { builder, calls } = chainable({ data: [], error: null, count: 0 });
+    mockGetSupabaseAdmin.mockReturnValue({ from: vi.fn(() => builder) } as any);
+    await listJobs({});
+
+    // A bare .lt("expires_at", today) is exactly the trap this test pins: in
+    // SQL `NULL < date` is NULL, never true, so it would hide every job that
+    // simply has no expiry date, i.e. the entire board.
+    expect((calls["lt"] ?? []).some((a) => a[0] === "expires_at")).toBe(false);
+
+    const orCalls = calls["or"] ?? [];
+    expect(orCalls).toHaveLength(1);
+    const clause = asClauseString(orCalls[0][0]);
+    expect(clause).toBe(`expires_at.is.null,expires_at.gte.${FROZEN}`);
+
+    // Evaluate the emitted clause with PostgREST/SQL semantics rather than
+    // string-matching it, so the assertion reflects real filtering.
+    expect(evaluateOrClause(clause, { expires_at: null })).toBe(true);
+    expect(evaluateOrClause(clause, { expires_at: undefined })).toBe(true);
+    expect(evaluateOrClause(clause, { expires_at: "2000-01-01" })).toBe(false);
+    expect(evaluateOrClause(clause, { expires_at: "2026-09-26" })).toBe(false);
+    expect(evaluateOrClause(clause, { expires_at: FROZEN })).toBe(true);
+    expect(evaluateOrClause(clause, { expires_at: "2999-01-01" })).toBe(true);
+
+    // The in-memory degraded path must agree with the SQL clause.
+    expect(isJobExpired({ isExpired: false })).toBe(false);
+    expect(isJobExpired({ isExpired: false, expiresAt: "2000-01-01" })).toBe(true);
+    expect(isJobExpired({ isExpired: false, expiresAt: FROZEN })).toBe(false);
+  });
+
+  it("ANDs the expiry and free-text groups across two .or() calls, so a search keeps NULL-expiry jobs and still drops past-dated ones", async () => {
+    const { builder, calls } = chainable({ data: [], error: null, count: 0 });
+    mockGetSupabaseAdmin.mockReturnValue({ from: vi.fn(() => builder) } as any);
+    await listJobs({ q: "robotics" });
+
+    // postgrest-js *appends* one `or=` param per .or() call, and PostgREST ANDs
+    // multiple top-level params, so the two groups are emitted separately to get
+    // (expiryGroup) AND (searchGroup). Merging them into a single `or(and(a),and(b))`
+    // would be an OR of ANDs, which is both the wrong connective and inexpressible
+    // any other way: the top level of an `or=` argument is always disjunctive.
+    const groups = (calls["or"] ?? []).map((c) => asClauseString(c[0]));
+    expect(groups).toHaveLength(2);
+
+    // Matches the free-text group in every column, so the row is a genuine
+    // search hit under any encoding of the search group.
+    const matching = {
+      title: "Robotics Engineer",
+      company: "Robotics GmbH",
+      description: "Robotics fleet ops",
+    };
+
+    // expires_at IS NULL means "never expires": a row matching the search is kept.
+    expect(evaluateOrGroups(groups, { ...matching, expires_at: null })).toBe(true);
+    expect(evaluateOrGroups(groups, { ...matching, expires_at: undefined })).toBe(true);
+
+    // A genuinely past-dated, not-yet-cron-flagged row must not leak through
+    // just because it matched the search.
+    expect(evaluateOrGroups(groups, { ...matching, expires_at: "2000-01-01" })).toBe(false);
+    expect(evaluateOrGroups(groups, { ...matching, expires_at: "2026-09-26" })).toBe(false);
+
+    // Today and later are still live.
+    expect(evaluateOrGroups(groups, { ...matching, expires_at: FROZEN })).toBe(true);
+    expect(evaluateOrGroups(groups, { ...matching, expires_at: "2999-01-01" })).toBe(true);
+
+    // The search group still constrains: the expiry group alone must not admit a
+    // NULL-expiry row matching nothing, which is what the merged OR-of-ANDs did.
+    expect(
+      evaluateOrGroups(groups, {
+        title: "Sales Manager",
+        company: "Beispiel GmbH",
+        description: "supply chain and logistics",
+        expires_at: null,
+      })
+    ).toBe(false);
+
+    // Each column of the free-text group participates in its internal OR: a hit
+    // in any single column is enough, on its own, to survive the expiry filter.
+    expect(evaluateOrGroups(groups, { title: "ROBOTICS lead", company: "y", description: "z", expires_at: null })).toBe(true);
+    expect(evaluateOrGroups(groups, { title: "x", company: "Robotics AG", description: "y", expires_at: null })).toBe(true);
+    expect(evaluateOrGroups(groups, { title: "x", company: "y", description: "ROBOTICS fleet ops", expires_at: null })).toBe(true);
+  });
+
+  it("emits exactly one .or() call — the bare expiry group — when there is no search term", async () => {
+    const { builder, calls } = chainable({ data: [], error: null, count: 0 });
+    mockGetSupabaseAdmin.mockReturnValue({ from: vi.fn(() => builder) } as any);
+    await listJobs({});
+
+    const groups = (calls["or"] ?? []).map((c) => asClauseString(c[0]));
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toBe(`expires_at.is.null,expires_at.gte.${FROZEN}`);
+    expect(evaluateOrGroups(groups, { expires_at: null })).toBe(true);
+    expect(evaluateOrGroups(groups, { expires_at: "2000-01-01" })).toBe(false);
   });
 });
 
