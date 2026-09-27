@@ -8,6 +8,9 @@ import { checkRateLimit, getClientIp } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 
+const LIST_LIMIT = 200;
+const APPLICATION_COLUMNS = "user_id,job_id,status,updated_at";
+
 const putSchema = z.object({
   jobId: z.string().min(1),
   status: z.enum(["saved", "applied", "screening", "interview", "offer", "rejected"]),
@@ -23,8 +26,10 @@ export async function GET() {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from("applications")
-      .select("*")
-      .eq("user_id", user.id);
+      .select(APPLICATION_COLUMNS)
+      .eq("user_id", user.id)
+      .order("updated_at", { ascending: false })
+      .limit(LIST_LIMIT);
 
     if (error) {
       console.error("[GET /api/applications] DB error", error);
@@ -104,7 +109,7 @@ export async function PUT(request: NextRequest) {
         },
         { onConflict: "user_id,job_id" }
       )
-      .select()
+      .select(APPLICATION_COLUMNS)
       .single();
 
     if (error) {

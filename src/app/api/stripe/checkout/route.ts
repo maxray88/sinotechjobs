@@ -21,6 +21,25 @@ const NAME_MAP: Record<AllowedTier, string> = {
   enterprise: "Enterprise Posting 30d",
 };
 
+/**
+ * Reads the canonical site origin from server-side configuration.
+ * Returns the normalized origin (scheme + host + port, no trailing slash) or
+ * null when nothing usable is configured, so the caller can fall back to
+ * request.url rather than to a client-controlled header.
+ */
+function resolveSiteOrigin(): string | null {
+  const configured = process.env.SITE_URL || process.env.NEXT_PUBLIC_SITE_URL;
+  if (!configured) return null;
+  try {
+    return new URL(configured).origin;
+  } catch {
+    console.error(
+      `[POST /api/stripe/checkout] SITE_URL is not a valid absolute URL: ${configured}`
+    );
+    return null;
+  }
+}
+
 export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) {
@@ -130,59 +149,94 @@ export async function POST(request: NextRequest) {
     }
 
     const stripeSecret = process.env.STRIPE_SECRET_KEY;
-    const stripe = new Stripe(stripeSecret, { apiVersion: "2024-06-20" } as unknown as never);
+    // No apiVersion override: the SDK pins the API version it was generated
+    // against, so the installed typings and the responses agree.
+    const stripe = new Stripe(stripeSecret);
 
     const cents = PRICE_MAP[actualTier];
     const name = NAME_MAP[actualTier];
 
-    // Determine origin for success/cancel URLs
-    const origin =
-      request.headers.get("origin") ||
-      (request.headers.get("x-forwarded-host")
-        ? `https://${request.headers.get("x-forwarded-host")}`
-        : new URL(request.url).origin);
+    // The redirect origin must never come from a client-supplied header. Both
+    // `origin` and `x-forwarded-host` are settable by any non-browser client, so
+    // trusting them lets an attacker mint a real paid Checkout Session that then
+    // sends the paying customer to https://evil.example/employer/dashboard?paid=1
+    // after the charge lands — and it defeats CSRF on this cookie-authenticated
+    // POST. Only server-side configuration is trusted; request.url is Next.js's
+    // own reconstruction of the request and is not client-writable. If a proxy
+    // must be tolerated, allowlist its host against the configured origin here
+    // rather than passing the header through.
+    const origin = resolveSiteOrigin() ?? new URL(request.url).origin;
 
     const successUrl = `${origin}/employer/dashboard?paid=1`;
     const cancelUrl = `${origin}/employer/dashboard?canceled=1`;
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      line_items: [
-        {
-          price_data: {
-            currency: "eur",
-            unit_amount: cents,
-            product_data: {
-              name,
-              description: "SinotechJobs tier",
-            },
-          },
-          quantity: 1,
-        },
-      ],
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      metadata: {
-        postingId: String(postingId),
-        userId: user.id,
-        tier: actualTier,
-      },
-      client_reference_id: String(postingId),
-    } as unknown as Record<string, unknown>);
+    // Stable per (posting, user, tier): a double-click, a client retry or a
+    // network timeout replays the same key, so Stripe returns the original
+    // Session instead of creating a second one that could charge again. The
+    // tier is part of the key so switching tiers still mints a new Session.
+    const idempotencyKey = `checkout:${postingId}:${user.id}:${actualTier}`;
 
-    // Persist stripe_session_id
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: "payment",
+        line_items: [
+          {
+            price_data: {
+              currency: "eur",
+              unit_amount: cents,
+              product_data: {
+                name,
+                description: "SinotechJobs tier",
+              },
+            },
+            quantity: 1,
+          },
+        ],
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        metadata: {
+          postingId: String(postingId),
+          userId: user.id,
+          tier: actualTier,
+        },
+        // Mirrored onto the PaymentIntent so charge.refunded and
+        // charge.dispute.created can be mapped back to this posting: a Charge
+        // carries no reference to a Checkout Session.
+        payment_intent_data: {
+          metadata: {
+            postingId: String(postingId),
+            userId: user.id,
+            tier: actualTier,
+          },
+        },
+        client_reference_id: String(postingId),
+      },
+      { idempotencyKey }
+    );
+
+    // Persist stripe_session_id, but only onto a row that does not have one
+    // yet. Overwriting would orphan the earlier Session so it can neither be
+    // reconciled nor refunded. The webhook grants on the posting id carried in
+    // the session metadata, so a second Session is still delivered correctly.
     try {
-      await supabase
+      const { error: sessionIdError } = await supabase
         .from("employer_postings")
-        .update({ stripe_session_id: (session as unknown as { id: string }).id })
-        .eq("id", postingId);
+        .update({ stripe_session_id: session.id })
+        .eq("id", postingId)
+        .is("stripe_session_id", null);
+
+      if (sessionIdError) {
+        console.error(
+          "[POST /api/stripe/checkout] failed to save stripe_session_id",
+          sessionIdError
+        );
+      }
     } catch (err) {
       console.error("[POST /api/stripe/checkout] failed to save stripe_session_id", err);
       // still return session url
     }
 
-    const sess = session as unknown as { url: string | null; id: string };
-    return NextResponse.json({ url: sess.url, sessionId: sess.id }, { status: 200 });
+    return NextResponse.json({ url: session.url, sessionId: session.id }, { status: 200 });
   } catch (err) {
     console.error("[POST /api/stripe/checkout] unexpected error", err);
     return NextResponse.json({ error: "internal" }, { status: 500 });

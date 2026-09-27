@@ -8,6 +8,9 @@ import { rowToJob } from "@/lib/db/mappers";
 
 export const dynamic = "force-dynamic";
 
+const LIST_LIMIT = 200;
+const JOB_ID_BATCH = 100;
+
 // GET: list saved jobs for current user
 export async function GET() {
   const user = await getCurrentUser();
@@ -21,7 +24,8 @@ export async function GET() {
       .from("saved_jobs")
       .select("job_id,saved_at")
       .eq("user_id", user.id)
-      .order("saved_at", { ascending: false });
+      .order("saved_at", { ascending: false })
+      .limit(LIST_LIMIT);
 
     if (error) {
       console.error("[GET /api/saved-jobs] DB error", error);
@@ -34,18 +38,25 @@ export async function GET() {
 
     const jobIds = rows.map((r: { job_id: string }) => r.job_id);
 
-    const { data: jobRows, error: jobError } = await supabase
-      .from("jobs")
-      .select("*")
-      .in("id", jobIds);
+    // Chunk the .in() filter: a single oversized list produces a 500 from
+    // PostgREST rather than a degraded response.
+    const jobRows: unknown[] = [];
+    for (let i = 0; i < jobIds.length; i += JOB_ID_BATCH) {
+      const batch = jobIds.slice(i, i + JOB_ID_BATCH);
+      const { data: batchRows, error: jobError } = await supabase
+        .from("jobs")
+        .select("*")
+        .in("id", batch);
 
-    if (jobError) {
-      console.error("[GET /api/saved-jobs] jobs fetch error", jobError);
-      return NextResponse.json({ error: "internal" }, { status: 500 });
+      if (jobError) {
+        console.error("[GET /api/saved-jobs] jobs fetch error", jobError);
+        return NextResponse.json({ error: "internal" }, { status: 500 });
+      }
+      jobRows.push(...(batchRows ?? []));
     }
 
     // Map rows to domain Jobs, preserve order by saved_at (rows order)
-    const mapped = (jobRows || []).map((r: unknown) => {
+    const mapped = jobRows.map((r: unknown) => {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return rowToJob(r as any);
@@ -90,25 +101,8 @@ export async function POST(request: NextRequest) {
   }
   const trimmed = jobId.trim();
 
-  const supabase = getSupabaseAdmin();
-
-  // Check job exists
-  const { data: job, error: jobErr } = await supabase
-    .from("jobs")
-    .select("id")
-    .eq("id", trimmed)
-    .single();
-
-  if (jobErr || !job) {
-    const code = (jobErr as { code?: string })?.code;
-    if (code === "PGRST116" || !job) {
-      return NextResponse.json({ error: "not_found" }, { status: 404 });
-    }
-    console.error("[POST /api/saved-jobs] job check error", jobErr);
-    return NextResponse.json({ error: "internal" }, { status: 500 });
-  }
-
-  // Rate limit: 20 per minute
+  // Rate limit: 20 per minute. Checked before any DB work so a rate-limited
+  // caller cannot consume queries (matches the order used in /api/applications).
   const ip = getClientIp(request);
   const { allowed, retryAfterMs } = checkRateLimit(ip, 20, 60_000);
   if (!allowed) {
@@ -119,36 +113,56 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Check if already saved to return 200
-  const { data: existing } = await supabase
-    .from("saved_jobs")
-    .select("job_id")
-    .eq("user_id", user.id)
-    .eq("job_id", trimmed)
-    .maybeSingle();
+  try {
+    const supabase = getSupabaseAdmin();
 
-  if (existing) {
-    return NextResponse.json({ saved: true }, { status: 200 });
-  }
+    // Check job exists
+    const { data: job, error: jobErr } = await supabase
+      .from("jobs")
+      .select("id")
+      .eq("id", trimmed)
+      .single();
 
-  const { error: insertError } = await supabase
-    .from("saved_jobs")
-    .insert({ user_id: user.id, job_id: trimmed })
-    // use upsert fallback if needed: but insert with primary key conflict handling
-    // supabase-js supports .upsert with onConflict; we use insert and handle duplicate
-    ;
+    if (jobErr || !job) {
+      const code = (jobErr as { code?: string })?.code;
+      if (code === "PGRST116" || !job) {
+        return NextResponse.json({ error: "not_found" }, { status: 404 });
+      }
+      console.error("[POST /api/saved-jobs] job check error", jobErr);
+      return NextResponse.json({ error: "internal" }, { status: 500 });
+    }
 
-  if (insertError) {
-    // duplicate primary key -> treat as already exists
-    const code = (insertError as { code?: string }).code;
-    if (code === "23505") {
+    // Check if already saved to return 200
+    const { data: existing } = await supabase
+      .from("saved_jobs")
+      .select("job_id")
+      .eq("user_id", user.id)
+      .eq("job_id", trimmed)
+      .maybeSingle();
+
+    if (existing) {
       return NextResponse.json({ saved: true }, { status: 200 });
     }
-    console.error("[POST /api/saved-jobs] insert error", insertError);
+
+    const { error: insertError } = await supabase
+      .from("saved_jobs")
+      .insert({ user_id: user.id, job_id: trimmed });
+
+    if (insertError) {
+      // duplicate primary key -> treat as already exists
+      const code = (insertError as { code?: string }).code;
+      if (code === "23505") {
+        return NextResponse.json({ saved: true }, { status: 200 });
+      }
+      console.error("[POST /api/saved-jobs] insert error", insertError);
+      return NextResponse.json({ error: "internal" }, { status: 500 });
+    }
+
+    return NextResponse.json({ saved: true }, { status: 201 });
+  } catch (err) {
+    console.error("[POST /api/saved-jobs] unexpected error", err);
     return NextResponse.json({ error: "internal" }, { status: 500 });
   }
-
-  return NextResponse.json({ saved: true }, { status: 201 });
 }
 
 // DELETE: remove saved job, supports ?jobId= and body {jobId}
