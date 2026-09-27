@@ -6,5 +6,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/cron).*)"],
+  // `api/cron` is intentionally NOT excluded. The middleware only refreshes
+  // Supabase cookies and never authorises, so excluding cron routes advertised
+  // them as unprotected; the real gate is the CRON_SECRET check in the routes.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

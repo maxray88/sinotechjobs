@@ -6,6 +6,17 @@ import type { Job } from "@/lib/types";
 export type EmailLocale = "en" | "zh" | "de";
 export type EmailTemplate = "posting_submitted" | "posting_approved" | "posting_rejected" | "weekly_digest" | "scrape_watchdog";
 
+// Strict single-address check for anything we hand to the mail API.
+// The `to` value reaches Resend as a raw header, so an address carrying CR/LF,
+// a comma or stray whitespace could smuggle extra headers (Bcc:) or extra
+// recipients. Rejecting is the only safe response — sanitising would let a
+// malformed address through to a paid send.
+const RECIPIENT_REGEX = /^[^\s@,\r\n]+@[^\s@,\r\n]+\.[^\s@,\r\n]+$/;
+
+export function isValidRecipient(email: unknown): email is string {
+  return typeof email === "string" && RECIPIENT_REGEX.test(email);
+}
+
 export async function sendEmail(opts: {
   to: string;
   locale: EmailLocale;
@@ -131,6 +142,11 @@ export async function sendEmail(opts: {
       subject = `Your posting needs revision: ${jobTitle}`;
       html = `<p>Hi,</p><p>Your posting <strong>${safeTitle}</strong> at <strong>${safeCompany}</strong> needs revision.</p>${safeReason ? `<p>Reason: ${safeReason}</p>` : ""}<p>Please update and resubmit.</p><p>— SinotechJobs Team</p>`;
     }
+  }
+
+  if (!isValidRecipient(opts.to)) {
+    console.warn("[email] refusing to send to invalid recipient address");
+    throw new Error("Invalid email recipient");
   }
 
   try {

@@ -24,11 +24,16 @@ export async function GET(request: NextRequest) {
   // route is gated exactly like /api/cron/* — an unauthenticated client must not
   // be able to drain API credit or wipe the jobs table.
   const secret = process.env.CRON_SECRET;
-  if (secret && request.headers.get("authorization") !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
-  }
   if (!secret) {
+    // Fail closed: scraping and clearing cost paid quota / are destructive, so
+    // a missing secret in production must reject rather than fall open.
+    if (process.env.NODE_ENV === "production") {
+      console.error("[api/scrape] CRON_SECRET not set — refusing unauthenticated request in production");
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+    }
     console.warn("[api/scrape] CRON_SECRET not set — allowing unauthenticated request (dev only)");
+  } else if (request.headers.get("authorization") !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
 
   // Default: return stats and sources
@@ -154,11 +159,15 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
-  if (secret && request.headers.get("authorization") !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
-  }
   if (!secret) {
+    // Same fail-closed rule as GET above.
+    if (process.env.NODE_ENV === "production") {
+      console.error("[api/scrape] CRON_SECRET not set — refusing unauthenticated request in production");
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+    }
     console.warn("[api/scrape] CRON_SECRET not set — allowing unauthenticated request (dev only)");
+  } else if (request.headers.get("authorization") !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
 
   const body = await request.json().catch(() => ({}));

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, getProfileRole } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/db/client";
-import { sendEmail } from "@/lib/email";
+import { sendEmail, isValidRecipient } from "@/lib/email";
 
 export async function POST(request: NextRequest) {
   // Auth: require admin role
@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
         if (!recipientEmail) {
           const maybe = posting as Record<string, unknown>;
           const fallback = maybe["contact_email"] ?? maybe["email"] ?? maybe["applicant_email"];
-          if (typeof fallback === "string" && fallback.includes("@")) recipientEmail = fallback as string;
+          if (isValidRecipient(fallback)) recipientEmail = fallback;
         }
         if (recipientEmail) {
           void sendEmail({
@@ -201,7 +201,7 @@ export async function POST(request: NextRequest) {
         if (!recipientEmail) {
           const maybe = posting as Record<string, unknown>;
           const fallback = maybe["contact_email"] ?? maybe["email"] ?? maybe["applicant_email"];
-          if (typeof fallback === "string" && fallback.includes("@")) recipientEmail = fallback as string;
+          if (isValidRecipient(fallback)) recipientEmail = fallback;
         }
         if (recipientEmail) {
           void sendEmail({

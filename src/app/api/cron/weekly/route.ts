@@ -13,12 +13,16 @@ export async function GET(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = request.headers.get("authorization");
 
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
-  }
-
   if (!cronSecret) {
+    // Fail closed: a missing secret in production means an anonymous client
+    // could trigger a full paid scrape. Only dev runs unauthenticated.
+    if (process.env.NODE_ENV === "production") {
+      console.error("[cron/weekly] CRON_SECRET not set — refusing unauthenticated request in production");
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+    }
     console.warn("[cron/weekly] CRON_SECRET not set — allowing unauthenticated request (dev only)");
+  } else if (authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
 
   // Rate limiting: no-op — Vercel Cron invokes at most once per schedule (weekly).
