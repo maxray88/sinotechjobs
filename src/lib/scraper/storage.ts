@@ -65,7 +65,11 @@ export function addScrapedJobs(rawJobs: ScrapedJobRaw[]): { added: number; skipp
     added++;
   }
 
-  const all = [...newJobs, ...existing].slice(0, 500);
+  const merged = [...newJobs, ...existing];
+  if (merged.length > 500) {
+    console.warn(`[storage] job cap reached — dropping ${merged.length - 500} oldest job(s) (cap 500)`);
+  }
+  const all = merged.slice(0, 500);
   saveScrapedJobs(all);
 
   return { added, skipped, total: all.length };
@@ -107,21 +111,24 @@ export function getStorageStats(): {
   lastUpdated: string | null;
   reportCount: number;
 } {
-  const jobs = loadScrapedJobs();
   const reports = loadScrapeReports();
 
+  // Single read: reading the file twice could mix a stale job count with a fresh
+ // lastUpdated (or vice versa) and a corrupt file would fail silently.
+  let totalScrapedJobs = 0;
   let lastUpdated: string | null = null;
   try {
     if (fs.existsSync(SCRAPED_JOBS_FILE)) {
-      const data = JSON.parse(fs.readFileSync(SCRAPED_JOBS_FILE, "utf-8"));
+      const data: StoredData = JSON.parse(fs.readFileSync(SCRAPED_JOBS_FILE, "utf-8"));
+      totalScrapedJobs = data.jobs?.length ?? 0;
       lastUpdated = data.lastUpdated || null;
     }
   } catch {
-    // ignore
+    console.warn(`[storage] could not read ${SCRAPED_JOBS_FILE} — reporting zero jobs`);
   }
 
   return {
-    totalScrapedJobs: jobs.length,
+    totalScrapedJobs,
     lastUpdated,
     reportCount: reports.length,
   };
@@ -185,21 +192,13 @@ export async function saveScrapeReportAsync(report: ScrapeReport): Promise<void>
 
 export async function clearScrapedJobsAsync(): Promise<void> {
   if (isSupabaseStore()) {
-    // For Supabase, clear would require delete; delegate to JSON clear as fallback is acceptable
-    // Implement via direct Supabase delete if needed, but for now wrap sync
-    // Dynamic import to avoid circular if needed
-    const supabaseStore = isSupabaseStore();
-    if (supabaseStore) {
-      // Attempt to delete all jobs via Supabase — best effort, fallback to sync
-      try {
-        const { getSupabaseAdmin } = await import("../db/client");
-        const supabase = getSupabaseAdmin();
-        await supabase.from("jobs").delete().eq("source", "scraped");
-        return;
-      } catch {
-        // fallback
-      }
-    }
+    // Never fall back to the JSON store: it would report success while the jobs
+    // table stayed fully intact. Rethrow so the API surfaces the failure.
+    const { getSupabaseAdmin } = await import("../db/client");
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase.from("jobs").delete().eq("source", "scraped");
+    if (error) throw error;
+    return;
   }
   return clearScrapedJobs();
 }
@@ -224,4 +223,3 @@ export async function getStorageStatsAsync(): Promise<{
   }
   return getStorageStats();
 }
-

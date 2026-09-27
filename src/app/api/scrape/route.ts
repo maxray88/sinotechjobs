@@ -19,7 +19,18 @@ import { buildHealthMatrix } from "@/lib/scraper/health";
 // Vercel Cron branches (?mode=daily / ?mode=full) have been moved to
 // src/app/api/cron/* and are authenticated via Bearer CRON_SECRET.
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  // Auth: scraping and clearing are paid-quota / destructive operations, so this
+  // route is gated exactly like /api/cron/* — an unauthenticated client must not
+  // be able to drain API credit or wipe the jobs table.
+  const secret = process.env.CRON_SECRET;
+  if (secret && request.headers.get("authorization") !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  }
+  if (!secret) {
+    console.warn("[api/scrape] CRON_SECRET not set — allowing unauthenticated request (dev only)");
+  }
+
   // Default: return stats and sources
   const baseSources = scraperSources.map((s) => ({
     id: s.id,
@@ -142,10 +153,14 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  // Admin-only, not for cron — use /api/cron/* for scheduled jobs.
-  // No Bearer check here so dashboard buttons work without extra headers.
-  // `clear` could be gated by CRON_SECRET in stricter setups; currently
-  // left open for admin UI (protect via deployment auth/middleware instead).
+  const secret = process.env.CRON_SECRET;
+  if (secret && request.headers.get("authorization") !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  }
+  if (!secret) {
+    console.warn("[api/scrape] CRON_SECRET not set — allowing unauthenticated request (dev only)");
+  }
+
   const body = await request.json().catch(() => ({}));
   const action = body.action || "scrape-all";
   const sourceId = body.sourceId as string | undefined;

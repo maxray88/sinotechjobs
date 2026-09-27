@@ -8,10 +8,37 @@ vi.mock("@/lib/scraper/puppeteer", () => ({
   getBrowser: vi.fn(),
 }));
 
-import { fetchViaScrapingAPI, scrapeSource } from "@/lib/scraper/engine";
+import { fetchViaScrapingAPI, scrapeSource, MIN_PLAUSIBLE_HTML_CHARS } from "@/lib/scraper/engine";
 import { renderPage } from "@/lib/scraper/puppeteer";
 
 const mockedRenderPage = vi.mocked(renderPage);
+
+// Realistic anti-bot interstitial. Short by design — this is what a real
+// Cloudflare/Akamai challenge looks like, and the guard must reject it.
+const CLOUDFLARE_CHALLENGE_PAGE =
+  `<html><head><title>Just a moment...</title></head><body>` +
+  `<div id="cf-challenge-running">Checking your browser before accessing.` +
+  ` Please enable JavaScript and cookies to continue.</div>` +
+  `</body></html>`;
+
+// A markup listing page of realistic size. Fixtures below 500 chars would be
+// rejected by the block-page guard, so they must not exercise that path.
+function realisticHtmlListing(): string {
+  return `<!doctype html>
+<html lang="de">
+  <head><meta charset="utf-8"><title>StepStone — Jobs für chinesischsprachige Bewerber</title></head>
+  <body>
+    <main class="job-results" data-total="1">
+      <article class="job" data-id="j-4711">
+        <a class="title" href="https://www.stepstone.de/jobs/senior-robotics-engineer-muenchen">Senior Robotics Engineer (m/w/d)</a>
+        <span class="company">KUKA AG</span>
+        <span class="location">München, Bayern</span>
+        <p class="description">Entwicklung von Steuerungssoftware für Industrieroboter. Gute Deutschkenntnisse required, Mandarin-Kenntnisse sind von Vorteil. Standort Augsburg oder München.</p>
+      </article>
+    </main>
+  </body>
+</html>`;
+}
 
 function makeSource(overrides: Partial<ScraperSource> = {}): ScraperSource {
   return {
@@ -48,16 +75,18 @@ describe("fetchViaScrapingAPI", () => {
   it("builds correct ScrapingBee URL with encoded key and url", async () => {
     process.env.SCRAPING_API_KEY = "bee-key-123";
     delete process.env.SCRAPING_API_PROVIDER; // default scrapingbee
+    const htmlPayload = realisticHtmlListing();
+    expect(htmlPayload.length).toBeGreaterThanOrEqual(MIN_PLAUSIBLE_HTML_CHARS);
 
     fetchSpy.mockResolvedValue({
       ok: true,
       status: 200,
-      text: async () => "<html>ok</html>",
+      text: async () => htmlPayload,
     } as Response);
 
-    const result = await fetchViaScrapingAPI("https://example.com/job?q=test&lang=zh");
+    const result = await fetchViaScrapingAPI("https://example.com/job?q=test&lang=zh", "html");
 
-    expect(result).toBe("<html>ok</html>");
+    expect(result).toBe(htmlPayload);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const calledUrl = fetchSpy.mock.calls[0][0] as string;
     expect(calledUrl).toContain("https://app.scrapingbee.com/api/v1/");
@@ -71,18 +100,19 @@ describe("fetchViaScrapingAPI", () => {
   it("builds correct ScraperAPI URL when provider=scraperapi", async () => {
     process.env.SCRAPING_API_KEY = "scraper-key-xyz";
     process.env.SCRAPING_API_PROVIDER = "scraperapi";
+    const htmlPayload = realisticHtmlListing();
 
     fetchSpy.mockResolvedValue({
       ok: true,
       status: 200,
-      text: async () => "<html>scraperapi ok</html>",
+      text: async () => htmlPayload,
     } as Response);
 
-    const result = await fetchViaScrapingAPI("https://example.com/job");
+    const result = await fetchViaScrapingAPI("https://example.com/job", "html");
 
-    expect(result).toBe("<html>scraperapi ok</html>");
+    expect(result).toBe(htmlPayload);
     const calledUrl = fetchSpy.mock.calls[0][0] as string;
-    expect(calledUrl).toContain("http://api.scraperapi.com");
+    expect(calledUrl).toContain("https://api.scraperapi.com");
     expect(calledUrl).toContain(`api_key=${encodeURIComponent("scraper-key-xyz")}`);
     expect(calledUrl).toContain(`url=${encodeURIComponent("https://example.com/job")}`);
     // ScrapingBee param should not be present
@@ -92,15 +122,16 @@ describe("fetchViaScrapingAPI", () => {
   it("handles provider case-insensitivity (ScrapingBee uppercase)", async () => {
     process.env.SCRAPING_API_KEY = "key123";
     process.env.SCRAPING_API_PROVIDER = "ScrapingBee";
+    const htmlPayload = realisticHtmlListing();
 
     fetchSpy.mockResolvedValue({
       ok: true,
       status: 200,
-      text: async () => "hi",
+      text: async () => htmlPayload,
     } as Response);
 
-    const result = await fetchViaScrapingAPI("https://example.com");
-    expect(result).toBe("hi");
+    const result = await fetchViaScrapingAPI("https://example.com", "html");
+    expect(result).toBe(htmlPayload);
     expect(fetchSpy.mock.calls[0][0]).toContain("scrapingbee.com");
   });
 
@@ -143,6 +174,87 @@ describe("fetchViaScrapingAPI", () => {
     process.env.SCRAPING_API_PROVIDER = "unknown-provider";
 
     await expect(fetchViaScrapingAPI("https://example.com")).rejects.toThrow("Unknown provider unknown-provider");
+  });
+
+  // --- block-page guard: a 200 that carries a challenge page must never be
+  // reported as content, otherwise the managed API credit is silently burned.
+  it("rejects a short Cloudflare challenge page for an html source (returns null)", async () => {
+    process.env.SCRAPING_API_KEY = "bee-key";
+    delete process.env.SCRAPING_API_PROVIDER;
+    expect(CLOUDFLARE_CHALLENGE_PAGE.length).toBeLessThan(MIN_PLAUSIBLE_HTML_CHARS);
+
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => CLOUDFLARE_CHALLENGE_PAGE,
+    } as Response);
+
+    const result = await fetchViaScrapingAPI("https://example.com/blocked", "html");
+    expect(result).toBeNull();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a long block-page payload with no markup markers (returns null)", async () => {
+    process.env.SCRAPING_API_KEY = "bee-key";
+    delete process.env.SCRAPING_API_PROVIDER;
+    // Over the length floor, but carries no HTML — a plain-text captcha wall.
+    const captchaWall = "Attention Required! Cloudflare error 1020 access denied. ".repeat(20);
+    expect(captchaWall.length).toBeGreaterThan(MIN_PLAUSIBLE_HTML_CHARS);
+
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => captchaWall,
+    } as Response);
+
+    const result = await fetchViaScrapingAPI("https://example.com/blocked", "html");
+    expect(result).toBeNull();
+  });
+
+  it("rejects an HTML challenge page for a json-api source (returns null)", async () => {
+    process.env.SCRAPING_API_KEY = "bee-key";
+    delete process.env.SCRAPING_API_PROVIDER;
+
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => realisticHtmlListing(), // long enough, but not JSON
+    } as Response);
+
+    const result = await fetchViaScrapingAPI("https://example.com/api/blocked", "json-api");
+    expect(result).toBeNull();
+  });
+
+  it("applies MIN_PLAUSIBLE_HTML_CHARS as a boundary on markup payloads", async () => {
+    process.env.SCRAPING_API_KEY = "bee-key";
+    delete process.env.SCRAPING_API_PROVIDER;
+
+    const justUnder = `<html>${"a".repeat(MIN_PLAUSIBLE_HTML_CHARS - "<html></html>".length - 1)}</html>`;
+    expect(justUnder.length).toBe(MIN_PLAUSIBLE_HTML_CHARS - 1);
+    fetchSpy.mockResolvedValue({ ok: true, status: 200, text: async () => justUnder } as Response);
+    expect(await fetchViaScrapingAPI("https://example.com", "html")).toBeNull();
+
+    const exactlyAt = `${justUnder}a`;
+    expect(exactlyAt.length).toBe(MIN_PLAUSIBLE_HTML_CHARS);
+    fetchSpy.mockResolvedValue({ ok: true, status: 200, text: async () => exactlyAt } as Response);
+    expect(await fetchViaScrapingAPI("https://example.com", "html")).toBe(exactlyAt);
+  });
+
+  it("accepts a short but valid JSON payload for a json-api source", async () => {
+    process.env.SCRAPING_API_KEY = "bee-key";
+    delete process.env.SCRAPING_API_PROVIDER;
+    // Small JSON is legitimate for a JSON API — no length floor applies there.
+    const jsonPayload = JSON.stringify([{ title: "Chinese speaking DevOps Engineer", company: "Bosch" }]);
+    expect(jsonPayload.length).toBeLessThan(MIN_PLAUSIBLE_HTML_CHARS);
+
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => jsonPayload,
+    } as Response);
+
+    const result = await fetchViaScrapingAPI("https://example.com/api/jobs", "json-api");
+    expect(result).toBe(jsonPayload);
   });
 });
 
@@ -494,5 +606,83 @@ describe("fallback chain and fetchMode", () => {
     // console.log should have been called with fetchMode
     const logCalls = (console.log as unknown as ReturnType<typeof vi.fn>).mock.calls.flat().join(" ");
     expect(logCalls).toContain("scraping-api");
+  });
+
+  it("falls back to puppeteer when scraping-api returns a block page, fetchMode=puppeteer", async () => {
+    process.env.SCRAPING_API_KEY = "block-key";
+    delete process.env.SCRAPING_API_PROVIDER;
+
+    const source = makeSource({
+      id: "linkedin-blocked",
+      scrapingApi: true,
+      jsRendered: true,
+      type: "html",
+      url: "https://example.com/blocked",
+      selectors: {
+        jobCard: ".job",
+        title: ".title",
+        company: ".company",
+        location: ".location",
+        link: "a",
+        description: ".description",
+      },
+    });
+
+    fetchSpy.mockImplementation(async (url: string) => {
+      if (typeof url === "string" && url.includes("scrapingbee.com")) {
+        return { ok: true, status: 200, text: async () => CLOUDFLARE_CHALLENGE_PAGE } as Response;
+      }
+      throw new Error(`Unexpected direct fetch call: ${url}`);
+    });
+
+    const puppeteerHtml = realisticHtmlListing();
+    mockedRenderPage.mockResolvedValue(puppeteerHtml);
+
+    const result = await scrapeSource(source);
+
+    expect(result.fetchMode).toBe("puppeteer");
+    expect(result.jobsFiltered).toBe(1);
+    expect(result.jobs[0].title).toContain("Robotics");
+    // the challenge page was discarded, never parsed into jobs
+    expect(result.jobs.some((j) => (j.description ?? "").includes("cf-challenge"))).toBe(false);
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("implausible payload"));
+    // attempt-local errors are dropped once a later mode succeeds
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("records a block/challenge error when scraping-api and all fallbacks fail", async () => {
+    process.env.SCRAPING_API_KEY = "block-key";
+    delete process.env.SCRAPING_API_PROVIDER;
+
+    const source = makeSource({
+      id: "linkedin-blocked",
+      scrapingApi: true,
+      jsRendered: false,
+      type: "html",
+      url: "https://example.com/blocked",
+    });
+
+    fetchSpy.mockImplementation(async (url: string) => {
+      if (typeof url === "string" && url.includes("scrapingbee.com")) {
+        return { ok: true, status: 200, text: async () => CLOUDFLARE_CHALLENGE_PAGE } as Response;
+      }
+      return { ok: false, status: 503, text: async () => "service unavailable" } as Response;
+    });
+
+    vi.useFakeTimers();
+    try {
+      const pending = scrapeSource(source);
+      // fetchWithRetry waits 2s + 4s between its three attempts
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await pending;
+
+      expect(result.fetchMode).toBeUndefined();
+      expect(result.jobs).toHaveLength(0);
+      expect(result.jobsFound).toBe(0);
+      expect(result.errors.some((e) => e.includes("block/challenge page"))).toBe(true);
+      expect(result.errors.some((e) => e.includes("Failed to fetch: https://example.com/blocked"))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

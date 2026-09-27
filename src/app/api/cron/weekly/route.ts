@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getEnabledSources } from "@/lib/scraper/sources";
 import { scrapeAllSources } from "@/lib/scraper/engine";
 import { addScrapedJobsAsync, saveScrapeReportAsync } from "@/lib/scraper/storage";
-import type { ScrapeReport } from "@/lib/scraper/types";
+import type { ScrapeReport, ScrapeResult } from "@/lib/scraper/types";
 
 export const maxDuration = 300;
 
@@ -29,11 +29,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "No enabled sources" }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
 
+  // Results are collected as each source completes, so a timeout still has a
+  // partial report to write instead of discarding everything already scraped.
+  const partialResults: ScrapeResult[] = [];
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+
   try {
     // Guard against hanging scrapes — Vercel maxDuration is 300s, we timeout at 280s to allow graceful error handling.
     const results = (await Promise.race([
-      scrapeAllSources(sources),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Cron timeout after 280s")), 280000)),
+      scrapeAllSources(sources, undefined, (r) => {
+        partialResults.push(r);
+      }),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("Cron timeout after 280s")), 280000);
+      }),
     ])) as Awaited<ReturnType<typeof scrapeAllSources>>;
 
     const allRawJobs = results.flatMap((r) => r.jobs);
@@ -73,19 +82,23 @@ export async function GET(request: NextRequest) {
     const errorReport = {
       timestamp: new Date().toISOString(),
       totalSources: sources.length,
-      successfulSources: 0,
-      totalJobsFound: 0,
-      totalJobsFiltered: 0,
+      successfulSources: partialResults.filter((r) => r.errors.length === 0).length,
+      totalJobsFound: partialResults.reduce((sum, r) => sum + r.jobsFound, 0),
+      totalJobsFiltered: partialResults.reduce((sum, r) => sum + r.jobsFiltered, 0),
       newJobsAdded: 0,
-      results: [],
+      results: partialResults,
       error: message,
     } as unknown as ScrapeReport;
 
     try {
       await saveScrapeReportAsync(errorReport);
-    } catch {}
+    } catch (saveErr) {
+      console.error("[cron/weekly] partial scrape report could not be saved", saveErr);
+    }
 
     console.error(`[cron/weekly] failed`, err);
     return NextResponse.json({ ok: false, error: message }, { status: 500, headers: { "Cache-Control": "no-store" } });
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
 }

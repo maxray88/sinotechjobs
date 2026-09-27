@@ -58,21 +58,46 @@ async function fetchWithRetry(url: string, retries = 2, requestOptions?: Scraper
   return null;
 }
 
-export async function fetchViaScrapingAPI(url: string): Promise<string> {
+// Managed scraping proxies bill per request, so a 200 that actually carries an
+// anti-bot challenge page burns credit without yielding any jobs. Reject such
+// payloads so the caller can fall through to its next fallback mode.
+export const MIN_PLAUSIBLE_HTML_CHARS = 500;
+const HTML_PAYLOAD_MARKERS = ["<html", "<!doctype", "<body", "<div", "<span", "<a ", "<rss", "<?xml"];
+const JSON_PAYLOAD_PREFIXES = ["{", "["];
+
+function isPlausibleScrapingApiPayload(body: string, sourceType?: ScraperSource["type"]): boolean {
+  // JSON endpoints legitimately return small payloads, so a length floor would
+  // reject valid responses. `parseJSONAPI` needs JSON anyway, so anything that
+  // is not a JSON container is a challenge page for these sources.
+  if (sourceType === "json-api" || sourceType === "api") {
+    const head = body.trimStart().slice(0, 2000);
+    return JSON_PAYLOAD_PREFIXES.some((prefix) => head.startsWith(prefix));
+  }
+  if (body.length < MIN_PLAUSIBLE_HTML_CHARS) return false;
+  const head = body.slice(0, 2000).toLowerCase();
+  return HTML_PAYLOAD_MARKERS.some((marker) => head.includes(marker));
+}
+
+export async function fetchViaScrapingAPI(
+  url: string,
+  sourceType?: ScraperSource["type"]
+): Promise<string | null> {
   const key = process.env.SCRAPING_API_KEY;
   const provider = (process.env.SCRAPING_API_PROVIDER || "scrapingbee").toLowerCase();
   if (!key) throw new Error("SCRAPING_API_KEY missing");
   if (provider === "scrapingbee") {
     const apiUrl = `https://app.scrapingbee.com/api/v1/?api_key=${encodeURIComponent(key)}&url=${encodeURIComponent(url)}&render_js=true&premium_proxy=true&country_code=de`;
-    const res = await fetch(apiUrl);
+    const res = await fetch(apiUrl, { signal: AbortSignal.timeout(30000) });
     if (!res.ok) throw new Error(`ScrapingBee ${res.status}`);
-    return res.text();
+    const body = await res.text();
+    return isPlausibleScrapingApiPayload(body, sourceType) ? body : null;
   }
   if (provider === "scraperapi") {
-    const apiUrl = `http://api.scraperapi.com?api_key=${encodeURIComponent(key)}&url=${encodeURIComponent(url)}`;
-    const res = await fetch(apiUrl);
+    const apiUrl = `https://api.scraperapi.com?api_key=${encodeURIComponent(key)}&url=${encodeURIComponent(url)}`;
+    const res = await fetch(apiUrl, { signal: AbortSignal.timeout(30000) });
     if (!res.ok) throw new Error(`ScraperAPI ${res.status}`);
-    return res.text();
+    const body = await res.text();
+    return isPlausibleScrapingApiPayload(body, sourceType) ? body : null;
   }
   throw new Error(`Unknown provider ${provider}`);
 }
@@ -318,15 +343,22 @@ async function fetchWithFallback(
   source: ScraperSource,
   errors: string[]
 ): Promise<{ html: string | null; fetchMode?: FetchMode }> {
-  let html: string | null = null;
-  let fetchMode: FetchMode | undefined;
+  // Errors from individual fallback attempts are local: if a later attempt
+  // succeeds they must not be merged into `errors`, otherwise the source is
+  // reported as failed even though it produced content.
+  const attemptErrors: string[] = [];
+
   if (source.scrapingApi && process.env.SCRAPING_API_KEY) {
     try {
-      html = await fetchViaScrapingAPI(source.url);
-      fetchMode = "scraping-api";
-      console.log(`[scraper] ${source.id} fetched via scraping-api`);
-      return { html, fetchMode };
+      const apiHtml = await fetchViaScrapingAPI(source.url, source.type);
+      if (apiHtml) {
+        console.log(`[scraper] ${source.id} fetched via scraping-api`);
+        return { html: apiHtml, fetchMode: "scraping-api" };
+      }
+      attemptErrors.push(`Scraping API returned a block/challenge page for ${source.url}`);
+      console.warn(`[scraper] scrapingApi returned an implausible payload for ${source.id}, falling back`);
     } catch (e) {
+      attemptErrors.push(`Scraping API failed for ${source.id}: ${e instanceof Error ? e.message : String(e)}`);
       console.warn(`[scraper] scrapingApi failed for ${source.id}, falling back: `, e);
     }
   }
@@ -342,9 +374,9 @@ async function fetchWithFallback(
         console.log(`[scraper] ${source.id} fetched via puppeteer`);
         return { html: puppeteerHtml, fetchMode: "puppeteer" };
       }
-      errors.push(`Puppeteer failed to render: ${source.url}`);
+      attemptErrors.push(`Puppeteer failed to render: ${source.url}`);
     } catch (e) {
-      errors.push(`Puppeteer error for ${source.id}: ${e instanceof Error ? e.message : String(e)}`);
+      attemptErrors.push(`Puppeteer error for ${source.id}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
   const direct = await fetchWithRetry(source.url, 2, source.requestOptions);
@@ -352,8 +384,10 @@ async function fetchWithFallback(
     console.log(`[scraper] ${source.id} fetched via direct`);
     return { html: direct, fetchMode: "direct" };
   }
-  if (errors.length === 0) errors.push(`Failed to fetch: ${source.url}`);
-  return { html: null, fetchMode };
+  attemptErrors.push(`Failed to fetch: ${source.url}`);
+  // Every fallback mode failed — only now do the attempt errors count.
+  errors.push(...attemptErrors);
+  return { html: null };
 }
 
 // Keep fetchPageContent for backwards compat — delegates to fetchWithFallback and returns html string
@@ -420,7 +454,14 @@ function parseHTML(html: string, source: ScraperSource, errors: string[]): Scrap
     const description = selectors.description ? $el.find(selectors.description).text().trim() : "";
 
     if (title && link) {
-      const fullUrl = link.startsWith("http") ? link : new URL(link, source.url).href;
+      // Resolve per item: a single malformed href must not discard the whole batch.
+      let fullUrl: string;
+      try {
+        fullUrl = link.startsWith("http") ? link : new URL(link, source.url).href;
+      } catch {
+        console.warn(`[scraper] ${source.id} skipping job with malformed link: ${link}`);
+        return;
+      }
       jobs.push({
         title: cleanText(title),
         company: cleanText(company) || extractCompanyFromSource(source),
@@ -469,8 +510,10 @@ function parseJSONAPI(html: string, source: ScraperSource, errors: string[]): Sc
     }
 
     return jobs;
-  } catch {
-    errors.push("Failed to parse JSON API response");
+  } catch (e) {
+    errors.push(
+      `Failed to parse JSON API response: ${e instanceof Error ? e.message : String(e)}`
+    );
     return [];
   }
 }
@@ -516,10 +559,22 @@ function extractCompanyFromSource(source: ScraperSource): string {
 }
 
 function parseDate(dateStr: string): string {
-  if (!dateStr) return new Date().toISOString().split("T")[0];
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return new Date().toISOString().split("T")[0];
-  return date.toISOString().split("T")[0];
+  const raw = (dateStr ?? "").trim();
+  if (raw) {
+    const date = new Date(raw);
+    if (!isNaN(date.getTime())) return date.toISOString().split("T")[0];
+    // Some feeds wrap the date in surrounding text ("Posted: 12.08.2026 | Berlin").
+    const embedded = raw.match(/\d{4}-\d{2}-\d{2}|\d{1,2}[./]\d{1,2}[./]\d{2,4}/);
+    if (embedded) {
+      const parsed = new Date(embedded[0]);
+      if (!isNaN(parsed.getTime())) return parsed.toISOString().split("T")[0];
+    }
+  }
+  // No usable date: stamp 7 days back so bulk-imported jobs can still soft-expire
+  // under expireOverdueJobs instead of looking permanently fresh.
+  const fallback = new Date();
+  fallback.setDate(fallback.getDate() - 7);
+  return fallback.toISOString().split("T")[0];
 }
 
 export function shouldSkipSource(source: ScraperSource, recentReports: unknown[] = []): boolean {
@@ -530,18 +585,37 @@ export function shouldSkipSource(source: ScraperSource, recentReports: unknown[]
   return false;
 }
 
-export async function scrapeAllSources(sources: ScraperSource[], recentReports?: unknown[]): Promise<ScrapeResult[]> {
+// shouldAutoDisable needs report history; callers do not pass it, so load the last
+// reports here via the same DATA_STORE-aware async path as addScrapedJobsAsync.
+async function loadRecentReports(): Promise<unknown[]> {
+  try {
+    const { loadScrapeReportsAsync } = await import("./storage");
+    return (await loadScrapeReportsAsync()) as unknown[];
+  } catch (err) {
+    console.warn("[scraper] failed to load recent reports for auto-disable:", err);
+    return [];
+  }
+}
+
+export async function scrapeAllSources(
+  sources: ScraperSource[],
+  recentReports?: unknown[],
+  onResult?: (result: ScrapeResult) => void
+): Promise<ScrapeResult[]> {
   const results: ScrapeResult[] = [];
+
+  const reports = recentReports && recentReports.length > 0 ? recentReports : await loadRecentReports();
 
   const usesPuppeteer = sources.some((s) => s.enabled && s.jsRendered);
 
   for (const source of sources) {
-    if (shouldSkipSource(source, (recentReports ?? []) as unknown[])) {
+    if (shouldSkipSource(source, reports)) {
       console.log(`[scraper] skip disabled ${source.id}`);
       continue;
     }
     const result = await scrapeSource(source);
     results.push(result);
+    onResult?.(result);
     await delay(1000 + Math.random() * 2000);
   }
 
