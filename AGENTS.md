@@ -2,7 +2,7 @@
 
 > **Last updated:** 2026-09-27
 > **Project location:** `~/01_Coding_Projects/05_Sinotech_Jobboard` (macOS) — **GitHub:** `maxray88/sinotechjobs` (public) — **Vercel:** `sinotechjobs.vercel.app` (`cvetqt9ui` READY) — **Supabase:** `nzlhmjcugibacpbiqtyr`
-> **Status:** Phases 0–5 complete. 10-round security/correctness audit finished 2026-09-27 (TSC 0 / LINT 0 / build 0 / 1770 tests). Remaining work is non-code: German legal texts (lawyer) and the SearchAPI quota reset (2026-10-01). WeChat Mini Program still decision-gated.
+> **Status:** Phases 0–5 complete. 12-round security/correctness audit finished 2026-09-27 (TSC 0 / LINT 0 / build 0 / 1777 tests). Remaining work is non-code: German legal texts (lawyer) and the SearchAPI quota reset (2026-10-01). WeChat Mini Program still decision-gated.
 >
 > This file is the authoritative handover doc. Where it conflicts with code, the code wins — verify before acting.
 
@@ -34,7 +34,7 @@ The board serves **real scraped jobs only**. The 32 curated demo jobs are no lon
 | Payments | Stripe 14 (`checkout` + `webhook`) |
 | Email | Resend 4 |
 | Validation | Zod 3.23 (`src/lib/validations/`) |
-| Tests | Vitest 4 — 23 files, 1770 tests |
+| Tests | Vitest 4 — 23 files, 1777 tests |
 | Deployment | Vercel (cron configured in `vercel.json`) |
 | Package Manager | npm |
 
@@ -88,13 +88,13 @@ The board serves **real scraped jobs only**. The 32 curated demo jobs are no lon
 - [x] Security headers in `next.config.ts`; `safeExternalUrl` rejects `javascript:` / `data:` / `vbscript:` / `file:` URLs
 
 ### Audit (2026-09-27) — see §3
-- [x] 10 rounds, 3 roles, 92 defects fixed, 1608 → 1770 tests
+- [x] 12 rounds, 3 roles; 92 defects fixed in rounds 1–10, then 2 CRITICAL paths (RLS privilege escalation, live-path stored XSS) in 11–12; suite 1608 → 1777 tests
 
 ---
 
 ## 3. Audit History
 
-A 10-round audit ran on 2026-09-27 with three rotating roles: **Claude Code** reviewed, **Codex** built the fixes, **Hermes** orchestrated. Each round re-reviewed the diffs of the earlier rounds.
+A 12-round audit ran on 2026-09-27 with three rotating roles: **Claude Code** reviewed, **Codex** built the fixes, **Hermes** orchestrated. Each round re-reviewed the diffs of the earlier rounds.
 
 | Round | Commit | Scope | Tests after |
 |-------|--------|-------|-------------|
@@ -108,13 +108,47 @@ A 10-round audit ran on 2026-09-27 with three rotating roles: **Claude Code** re
 | 8 | `b6b8dd8` | payments + candidate write paths | 1751 |
 | 9 | `45f8604` | employer postings + digest | 1762 |
 | 10 | `d9adf4f`, `78cafd9` | structured data/SEO + scraper health/CLI | 1770 |
+| 11 | `37a321f`, `1c8d5d3`, `df77c72` | **CRITICAL** RLS privilege escalation + auth/types follow-ups | 1776 |
+| 12 | `6cf39b8`, `182d05f` | **CRITICAL** live-path stored XSS + matching/ratelimit/middleware/i18n | 1777 |
 
-**Result:** 92 defects fixed; suite 1608 → 1770 tests; final state TSC 0 / LINT 0 / `next build` 0.
+**Result:** 92 defects fixed in rounds 1–10, then the round 11–12 findings below; suite 1608 → 1777 tests; final state TSC 0 / LINT 0 / `next build` 0.
 
-**Two patterns worth preserving:**
+### Round 11 — CRITICAL: privilege escalation through PostgREST
+
+The most severe finding of the whole campaign, and the first one that no amount of application-code review could reach.
+
+The "users can update own profile" policy in `db/migrations/002_auth_policies.sql` constrained row ownership only — `USING (auth.uid() = id) WITH CHECK (auth.uid() = id)` — and never mentioned the `role` column. There was no column-level GRANT/REVOKE anywhere. Any signed-in user could therefore call PostgREST directly:
+
+```
+PATCH /rest/v1/profiles?id=eq.<own-uuid>   {"role":"admin"}
+```
+
+No application route is involved, and `getProfileRole()` / `requireRole()` then opened every admin surface, including `/api/admin/postings`. Ten rounds of auditing `src/` missed it because identity was always read through `getCurrentUser()`; the attack path executes entirely below the app.
+
+Fixed by `db/migrations/006_lock_profile_role.sql` (see §5) and by `scripts/promote-admin.ts` (§6), which exists because nothing in the repo ever set `role = 'admin'` — the signup trigger hardcodes `'employer'`, so there was previously no way to grant the role at all.
+
+Two smaller defects in the same commit: `setAdminSecret` validated less than `getAdminSecret`, so a "successful" save silently produced no auth header; the guard missed non-ASCII, which throws at `new Headers({Authorization})` because that constructor requires a ByteString; and `getCurrentUser` discarded the auth error, so an auth-server outage looked like a logout. (`1c8d5d3`)
+
+Also in this round: `types.ts` declared nine fields non-null that the schema leaves nullable, hidden by an `as Job` in `rowToJob` that disabled the only check that would have noticed a coercion being dropped. (`df77c72`)
+
+### Round 12 — CRITICAL: stored XSS on the live validation path
+
+`postingSchema.application_url` was `z.string().url()`, and Zod's `.url()` accepts `javascript:alert(1)` because it only checks that `new URL()` parses. Verified by execution, not inference: `z.string().url().safeParse("javascript:alert(1)")` returns success. The stored value was rendered as a raw `href` in `EmployerDashboardClient.tsx` and `ApprovalsClient.tsx`, neither of which sanitised it, while `JobDetailClient.tsx` already guarded correctly with `safeExternalUrl`. Fixed in `src/lib/validations/posting.ts` by adding a `safeExternalUrl` refine so the schema and the render-side guard cannot drift.
+
+**The trap this exposed is worth more than the bug.** An earlier round had already hardened this same XSS in `src/lib/job-validation.ts` — and that module is **dead code**. Nothing under `src/` imports it; only `tests/` does. The live path is the Zod schema. A green test file was pinning a fix nothing shipped. Before you trust any validation fix here, confirm which module is actually imported.
+
+Also in this round:
+
+- **Matching** (`182d05f`): the language hard filter failed **open** on any requirement it could not parse — `{zh: 'B1'}` and `{en: 'C1+'}` each gated nobody. An open-ended "from €80k" salary was treated as a hard ceiling at the floor. A tagless job was hard-capped at exactly 70, which made the ≥ 85 immediate-alert tier unreachable on **any** untagged job for **any** candidate. `profile_completeness` was unclamped and a NaN source, and NaN fails all three score gates open, so a match could fall through every threshold silently. All of these now fail closed and clamp.
+- **Ratelimit**: `limit: 0` blocked an IP permanently and returned a NaN `Retry-After`; the tracking Map was never pruned, an unbounded leak on a long-lived instance. Both fixed, with an LRU cap and a sweep.
+- **Middleware**: an unguarded `getUser()` turned any Supabase hiccup into a site-wide 500.
+- **i18n**: `zh` and `de` are now typed as `typeof en`, so adding a key to one language is a compile error instead of a silent runtime `undefined`. Verified — an en-only key produces TS2741 in both.
+
+**Three patterns worth preserving:**
 
 1. **Later rounds caught regressions introduced by earlier rounds.** Round 5 exists specifically because rounds 1–4 broke things. Round 6 had to rewrite the expiry test because an earlier test encoded the buggy shape rather than the intended semantics. Treat a fix as unverified until a later round has re-reviewed it.
 2. **Suspected vulnerabilities routinely did not hold.** Reviewers regularly investigated a suspected flaw and reported that it was not exploitable as suspected. Those negative results stopped the team from writing wrong-direction fixes and from adding tests that would have locked in a wrong model. When a reviewer reports "not a vulnerability", do not re-open it without new evidence.
+3. **Auditing `src/` alone is structurally blind to whole classes of bug.** Round 11's escalation lives in an RLS policy and needs zero application code; round 12's XSS hid in the gap between two copies of the same validation logic, one of which nothing imports. Read the migrations, and trace the import graph of anything you "fix". A passing test suite proves the tested module works, not that it is reachable.
 
 Re-running an audit is cheap relative to the regressions it prevents. If you touch auth, payments, the scraper, or the sitemap, expect to re-review the diff rather than only the new code.
 
@@ -187,7 +221,7 @@ sinotechjobs/
 │       ├── validations/            # Zod schemas
 │       ├── db/                     # client, jobs-repo, reports-repo, email-repo, mappers, types
 │       └── scraper/                # types, engine, storage, sources, keywords, health, puppeteer
-├── tests/                          # 23 vitest files, 1770 tests
+├── tests/                          # 23 vitest files, 1777 tests
 ├── scripts/                        # scrape.ts, seed.ts, promote-admin.ts, generate-og.sh, measure-build.sh
 ├── content/blog/                   # 2 markdown posts (blue-card-visa-guide, dach-salary-benchmarks-2026)
 ├── db/migrations/                  # 001..006, apply in order
@@ -244,7 +278,7 @@ DATA_STORE=supabase npm run dev
 ```bash
 npx tsc --noEmit     # 0 errors
 npm run lint         # 0 problems
-npm test             # 23 files, 1770 tests
+npm test             # 23 files, 1777 tests
 npm run build
 ```
 
@@ -360,6 +394,7 @@ Test with `npx tsx scripts/scrape.ts --source=<id> --verbose`.
 ### Non-code blockers
 1. **German legal texts are placeholders.** The `legal_documents` seeds in `004_matching_legal.sql` are abbreviated drafts containing `[PLACEHOLDER]` markers; the tracked checklist is `docs/legal/IMPRINT-PRIVACY-TODO.md`. Outstanding: Impressum (§5 DDG / Art. 5 E-Commerce-RL), Datenschutzerklärung (GDPR Art. 13/14), DPA (AV-Vertrag with Vercel/Supabase), and Cookie policy — which additionally needs a consent banner before analytics are enabled. There are no `/imprint`, `/privacy`, or `/terms` pages yet. **A German IT-Recht lawyer must review the full text before any public launch** (design-doc budget ~€500–1,000 one-off). The §7.1 statement *"Jobbörse, keine Vermittlung — keine Vermittlung von Arbeitsverhältnissen, keine Erlaubnis nach §1 GewO"* must survive verbatim in all three languages; a lawyer's rewrite may not delete it.
 2. **`match_scores` is empty** because no candidate has scored ≥ 70 against any job. The table exists, `/api/match` persists correctly, and the read path is sound — there is simply no data above the threshold. Expected behaviour, not a bug. Do not "fix" it by lowering the threshold without first understanding the scoring model.
+   - **Open, and not confirmed as intended:** `match_scores` may stay empty for a second reason. `adaptJob` in `src/lib/matching.ts` now derives a default `required_languages` from `job.languageLevel` instead of leaving it empty, so a candidate with no `hsk_level` is hard-filtered out of **every** job rather than merely scoring low. Round 12 made the language filter fail closed on unparseable requirements, which is correct in isolation, but the combination means the board can match nobody until candidates record an HSK level. This is a deliberate product decision that has **not** been confirmed — settle it before treating an empty table as a scoring bug.
 3. **Google Jobs stays disabled until 2026-10-01.** `google-jobs-searchapi` was turned off in commit `57fb297` because the SearchAPI monthly quota was exhausted. Re-enable only after 2026-10-01 and keep total monthly calls under 100 — the source fires 4 queries (chinesisch / chinese speaking / mandarin / China Market) with a `google_jobs` → `google` engine fallback, so a naive re-enable can burn the quota within a single daily run.
 
 ### Technical limitations
@@ -433,6 +468,7 @@ Only the posting tiers are implemented (Stripe checkout + webhook). Everything e
 - **Expiry:** `listJobs` defaults to `includeExpired=false`; the job detail page still returns expired jobs with a badge. Migration 005 is not applied in every environment, so the repo layer degrades gracefully instead of erroring.
 - **Match scores:** persistence degrades to `{ saved: 0, degraded: true }` when migration 004 is absent, instead of throwing.
 - **Scraper routing:** `scrapingApi` + `SCRAPING_API_KEY` → managed API; else `jsRendered` → Puppeteer; else `fetch`. Every path is abortable (`AbortSignal`) so the 280s cron timeout actually stops the work and closes Chromium rather than leaving an orphan browser.
+- **Validation lives in the Zod schemas**, `src/lib/validations/`. `src/lib/job-validation.ts` is **dead code** — nothing under `src/` imports it, only `tests/` does. Round 12 found an XSS fix that had been made there while the live schema stayed vulnerable. Before you "harden" a validator here, confirm with `grep -rn "<module>" src/` that the module is actually on the request path; a green test file proves nothing about reachability.
 
 ### Deprecated sample jobs
 `src/lib/jobs.ts` still exports a 32-entry `sampleJobs` array and `SAMPLE_MODE = false`. The array is **not** served: in `supabase` mode `getAllJobs()` returns DB jobs only, and `getJobById` consults a sample id solely as a last-resort fallback. It survives only as the input to `scripts/seed.ts`. Treat it as dead weight — do not restore it to the board, and do not add seeding to any workflow.
@@ -452,7 +488,7 @@ Only the posting tiers are implemented (Stripe checkout + webhook). Everything e
 5. Rate-limit, then add a test under `tests/`.
 
 ### Testing
-- `npm test` (Vitest, 23 files, 1770 tests), `npm run test:watch`, `npm run test -- --coverage`
+- `npm test` (Vitest, 23 files, 1777 tests), `npm run test:watch`, `npm run test -- --coverage`
 - Tests live in `tests/` and `tests/unit/`; `vitest.config.ts` maps `@/` to `src/`
 - `npx tsc --noEmit` and `npm run lint` must both be 0
 - Prefer tests that assert **semantics** over shape — a shape-encoding test will happily pin a bug (round 6 had to rewrite one for exactly this reason)
