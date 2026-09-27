@@ -236,12 +236,65 @@ describe('Matching Algorithm — Soft Scores', () => {
       expect(result.score).toBe(0);
     });
 
-    it('returns 0 when job has no sub-specializations', () => {
+    it('returns a neutral 50, not 0, when the job declares no sub-specializations', () => {
+      // WHY 50 AND NOT 0. When a job lists no sub-specializations there is no
+      // evidence either way. Returning 0 punished the candidate for the JOB's
+      // missing tags and forfeited the heaviest soft weight (0.3), which
+      // capped every candidate at exactly 70 on an untagged job. Because
+      // shouldTriggerImmediateAlert(70) is false, no candidate however perfect
+      // could ever reach the >= 85 immediate alert — tag coverage, not
+      // candidate quality, would have decided alert eligibility. 50 keeps the
+      // part in play without inventing a signal.
+      //
+      // `reason` stays null: we never compared skills, so a "Skills match"
+      // string on this row would be a claim the engine cannot support.
       const result = computeSubSpecializationScore(
         makeCandidate({ sub_specializations: ['NLP / LLMs'] }),
         makeJob({ sub_specializations: [] }),
       );
-      expect(result.score).toBe(0);
+      expect(result.score).toBe(50);
+      expect(result.reason).toBeNull();
+
+      // Symmetric case: nothing on either side is still "no evidence", not
+      // "total mismatch". Guards against a future "both empty -> 0" shortcut.
+      const bothUntagged = computeSubSpecializationScore(
+        makeCandidate({ sub_specializations: [] }),
+        makeJob({ sub_specializations: [] }),
+      );
+      expect(bothUntagged.score).toBe(50);
+    });
+
+    it('still returns 0 for a TAGGED job with zero overlap — the neutral score must not rescue a genuine mismatch', () => {
+      // This is the regression risk of the neutral-50 change, so it is pinned
+      // next to it rather than as an unrelated "no overlap" case. 50 is
+      // awarded ONLY when the job supplies nothing to compare. The moment the
+      // job does declare sub-specializations, a candidate sharing none of them
+      // is a real mismatch and must score 0, not "50 because untagged".
+      const jobWithTags = makeJob({ sub_specializations: ['NLP / LLMs', 'MLOps / Infrastructure'] });
+
+      const zeroOverlap = computeSubSpecializationScore(
+        makeCandidate({ sub_specializations: ['Edge AI'] }),
+        jobWithTags,
+      );
+      expect(zeroOverlap.score).toBe(0);
+      expect(zeroOverlap.reason).toBeNull();
+
+      // Full overlap on the same tagged job stays 100: the neutral branch
+      // must not have swallowed the comparison path either.
+      const fullOverlap = computeSubSpecializationScore(
+        makeCandidate({ sub_specializations: ['NLP / LLMs', 'MLOps / Infrastructure'] }),
+        jobWithTags,
+      );
+      expect(fullOverlap.score).toBe(100);
+
+      // The distinction in one line: untagged ranks ABOVE a tagged total
+      // mismatch, because "no information" is not evidence of a bad fit.
+      expect(
+        computeSubSpecializationScore(
+          makeCandidate({ sub_specializations: ['NLP / LLMs'] }),
+          makeJob({ sub_specializations: [] }),
+        ).score,
+      ).toBeGreaterThan(zeroOverlap.score);
     });
   });
 

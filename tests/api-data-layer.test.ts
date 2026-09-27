@@ -315,15 +315,39 @@ describe("POST /api/match — focus_area alias resolution", () => {
     expect(capturedCandidates()[0].focus_area).toBe("ai_ml");
   });
 
-  it("a prototype-leaking focus_area would fail the hard filter (score 0)", async () => {
-    // Observable effect: with the fix "toString" resolves to ai_ml, matches the
-    // ai job, and the hard filter passes (non-zero score).
+  it("resolves a prototype-leaking focus_area to ai_ml, so it matches the ai job and excludes a non-ai job", async () => {
+    // Observable effect of the hasOwn guard: "toString" resolves to "ai_ml",
+    // which matches the ai job, passes the hard filters, and scores > 0.
+    //
+    // NOTE the hsk_level: 6 below. `makeJob` has languageLevel "required",
+    // which `adaptJob` now turns into a real `zh: HSK4` requirement, so a
+    // candidate with no HSK is rejected by the LANGUAGE filter and scores 0
+    // for an unrelated reason. That masked this test entirely: it returned 0
+    // with the guard and 0 without it, so it could not tell a working
+    // prototype fix from a broken one. Declaring an HSK removes the
+    // confounder so the score reflects the focus-area decision alone.
+    // Do not drop it — see the revert check in the round-12 notes.
+    mockGetAllJobs.mockResolvedValue([
+      makeJob({ id: "ai-1" }),
+      makeJob({ id: "robotics-1", field: "robotics", tags: ["ROS"] }),
+    ]);
+
     const res = await matchPOST(
-      matchRequestBody({ focus_area: "toString", desired_location: "Berlin" }),
+      matchRequestBody({ focus_area: "toString", desired_location: "Berlin", hsk_level: 6 }),
     );
     const results = (await res.json()) as Array<{ jobId: string; score: number }>;
+
+    // Sorted by score descending: the resolved ai_ml job wins.
     expect(results[0].jobId).toBe("ai-1");
     expect(results[0].score).toBeGreaterThan(0);
+
+    // Stronger than a bare > 0: the leaked value must resolve to a REAL focus
+    // area, not merely to something non-empty. It matches the ai job and
+    // excludes the robotics job, so it cannot be a wildcard that passes every
+    // hard filter regardless of the job's field.
+    const robotics = results.find((r) => r.jobId === "robotics-1");
+    expect(robotics?.score).toBe(0);
+    expect(results[0].score).toBeGreaterThan(robotics!.score);
   });
 });
 
