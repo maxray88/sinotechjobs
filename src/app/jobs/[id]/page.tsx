@@ -1,7 +1,7 @@
 import { getJobById } from "@/lib/all-jobs";
 import { notFound } from "next/navigation";
 import JobDetailClient from "./JobDetailClient";
-import { buildJobPostingJsonLd } from "@/lib/seo";
+import { buildJobPostingJsonLd, jsonLdScriptContent } from "@/lib/seo";
 
 export default async function JobDetailPage({
   params,
@@ -21,7 +21,7 @@ export default async function JobDetailPage({
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdScriptContent(jsonLd) }}
       />
       <JobDetailClient job={job} />
     </>

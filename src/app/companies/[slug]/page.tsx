@@ -1,16 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAllJobs } from "@/lib/all-jobs";
-import { slugifyCompany } from "@/lib/companies";
+import { companyEntriesFromJobs, resolveCompanyEntry } from "@/lib/companies";
 import type { JobField } from "@/lib/types";
 
 export async function generateStaticParams() {
   const jobs = await getAllJobs();
-  const seen = new Set<string>();
-  for (const job of jobs) {
-    seen.add(slugifyCompany(job.company));
-  }
-  return Array.from(seen).map((slug) => ({ slug }));
+  // Disambiguated slugs, not raw slugified names: a colliding second claimant
+  // lives at "<slug>-<hash>" and has to be prerendered at that exact path or
+  // the page only ever exists on-demand.
+  return companyEntriesFromJobs(jobs).map((entry) => ({
+    slug: entry.slug,
+  }));
 }
 
 const fieldColors: Record<JobField, string> = {
@@ -32,13 +33,24 @@ const fieldLabels: Record<JobField, string> = {
 export default async function CompanyDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const jobs = await getAllJobs();
-  const companyJobs = jobs.filter((job) => slugifyCompany(job.company) === slug);
+  const names = jobs.map((job) => job.company);
+  // Resolve the slug back to the name that claimed it, then filter on the name.
+  // Re-slugifying here would not see a disambiguation suffix and would 404.
+  const entry = resolveCompanyEntry(names, slug);
+
+  if (!entry) {
+    notFound();
+  }
+
+  // The entry name is trimmed; trim the job side so "Muller" and "Muller "
+  // stay one company while "Muller" and "Müller" stay two.
+  const companyJobs = jobs.filter((job) => job.company.trim() === entry.name);
 
   if (companyJobs.length === 0) {
     notFound();
   }
 
-  const companyName = companyJobs[0].company;
+  const companyName = entry.name;
 
   return (
     <div style={{ maxWidth: "900px", margin: "0 auto", padding: "2rem 1.5rem" }}>

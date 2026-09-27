@@ -1,30 +1,28 @@
 import Link from "next/link";
 import { getAllJobs } from "@/lib/all-jobs";
-import { getCompanies, slugifyCompany } from "@/lib/companies";
+import { companyEntriesFromJobs } from "@/lib/companies";
 
 export default async function CompaniesPage() {
   const jobs = await getAllJobs();
-  // Use helper to satisfy spec (derived via getCompanies)
-  const slugs = await getCompanies();
+  // One pass owns slug -> name for every consumer. Keying this map by
+  // slugifyCompany() would drop the "<slug>-<hash>" entries, so a disambiguated
+  // company would 404 from the index even though it has a page.
+  const entries = companyEntriesFromJobs(jobs);
 
-  const map = new Map<string, { name: string; count: number }>();
+  // Count per canonical (trimmed) name, so both jobs land on the same entry.
+  const countsByName = new Map<string, number>();
   for (const job of jobs) {
-    const slug = slugifyCompany(job.company);
-    const existing = map.get(slug);
-    if (existing) {
-      existing.count += 1;
-    } else {
-      map.set(slug, { name: job.company, count: 1 });
-    }
+    const name = job.company.trim();
+    countsByName.set(name, (countsByName.get(name) ?? 0) + 1);
   }
 
-  const companies = slugs
-    .map((slug) => {
-      const entry = map.get(slug);
-      if (!entry) return null;
-      return { slug, name: entry.name, count: entry.count };
-    })
-    .filter((c): c is { slug: string; name: string; count: number } => c !== null)
+  const companies = entries
+    .map((entry) => ({
+      slug: entry.slug,
+      name: entry.name,
+      count: countsByName.get(entry.name) ?? 0,
+    }))
+    .filter((c) => c.count > 0)
     .sort((a, b) => a.name.localeCompare(b.name));
 
   return (

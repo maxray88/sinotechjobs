@@ -75,7 +75,12 @@ export function getAllPosts(): BlogPost[] {
 
 export function getPostBySlug(slug: string): BlogPost | null {
   const dir = getBlogDir();
-  const filePath = path.join(dir, `${slug}.md`);
-  if (!fs.existsSync(filePath)) return null;
-  return readPostFile(filePath, slug);
+  // Reject traversal: path.join normalises `../`, so an unvalidated slug could
+  // otherwise read any `.md`-suffixed file on the server.
+  const safe = path.basename(slug);
+  if (!safe || safe !== slug) return null;
+  const full = path.resolve(dir, `${safe}.md`);
+  if (!full.startsWith(path.resolve(dir) + path.sep)) return null;
+  if (!fs.existsSync(full)) return null;
+  return readPostFile(full, slug);
 }

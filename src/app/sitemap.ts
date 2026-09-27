@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 import { getAllJobs } from "@/lib/all-jobs";
-import { getCompanies } from "@/lib/companies";
+import { companyEntriesFromJobs } from "@/lib/companies";
 import { getAllPosts } from "@/lib/blog";
 import type { Job } from "@/lib/types";
 
@@ -44,9 +44,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.8,
   }));
 
-  const companies = await getCompanies();
-  const companyEntries: MetadataRoute.Sitemap = companies.map((slug) => ({
-    url: `${base}/companies/${slug}`,
+  // Built from the same `jobs` read as the job URLs above: the disambiguation
+  // pass is order-dependent, so a second read could hand these slugs to a
+  // different company than the pages they point at.
+  const companyEntries: MetadataRoute.Sitemap = companyEntriesFromJobs(jobs).map((entry) => ({
+    url: `${base}/companies/${entry.slug}`,
     lastModified: now,
     changeFrequency: "weekly",
     priority: 0.5,
