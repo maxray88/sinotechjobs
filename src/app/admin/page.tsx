@@ -5,7 +5,7 @@ import { scraperSources } from "@/lib/scraper/sources";
 import type { ScrapeReport } from "@/lib/scraper/types";
 import type { HealthEntry } from "@/lib/scraper/health";
 import { useLang } from "@/components/LanguageProvider";
-import { buildAuthHeaders, clearAdminSecret, setAdminSecret } from "@/lib/admin-auth";
+import { buildAuthHeaders, clearAdminSecret, isValidAdminSecret, setAdminSecret } from "@/lib/admin-auth";
 
 interface SourceInfo {
   id: string;
@@ -184,6 +184,14 @@ export default function AdminPage() {
   };
 
   const handleSaveSecret = () => {
+    // An unusable value and a failed write are different problems: the first is
+    // the operator's input, the second is the browser. setAdminSecret returns
+    // false for both, so the shared predicate is checked first — otherwise a
+    // rejected secret is reported as unavailable storage, which is wrong.
+    if (!isValidAdminSecret(secretInput.trim())) {
+      setError(t.admin.secret.invalidFormatError);
+      return;
+    }
     // A failed storage write (private mode, storage blocked) must not degrade
     // into a silent re-prompt loop: retrying an unauthenticated fetch can only
     // ever produce another 401, so report the real cause instead.

@@ -5,18 +5,36 @@
 
 export const ADMIN_SECRET_STORAGE_KEY = "sinotechjobs:admin-secret";
 
+/**
+ * Single source of truth for "is this secret usable".
+ *
+ * The value is replayed as `new Headers({ Authorization: \`Bearer ${secret}\` })`,
+ * and that constructor requires a ByteString value. Any code point outside
+ * printable ASCII — C0/C1 control characters (CR, LF, NUL, …), DEL, and every
+ * non-ASCII character such as a CJK ideograph or an emoji — makes it throw a
+ * TypeError, which would fail every admin fetch at the construction site rather
+ * than at the point of saving. Rejecting the whole non-ASCII range in one rule
+ * covers all of those cases.
+ *
+ * getAdminSecret and setAdminSecret MUST both call this. They used to drift:
+ * the read path rejected control characters while the write path only checked
+ * for emptiness, so a "successful" save could persist a secret that
+ * buildAuthHeaders() then refused to put in a header — the dashboard fired
+ * unauthenticated fetches and re-prompted in a loop.
+ */
+export function isValidAdminSecret(value: string): boolean {
+  return value.length > 0 && !/[^\x20-\x7e]/.test(value);
+}
+
 export function getAdminSecret(): string | null {
   if (typeof window === "undefined") return null;
   try {
     const stored = window.localStorage.getItem(ADMIN_SECRET_STORAGE_KEY);
     if (stored === null) return null;
     const trimmed = stored.trim();
-    if (!trimmed) return null;
-    // A hand-edited value can carry CR/LF or other control characters. Such a
-    // value makes `new Headers({ Authorization: ... })` throw a TypeError,
-    // which would fail every admin fetch at the construction site, so it is
-    // rejected here instead.
-    if (/[\u0000-\u001f\u007f]/.test(trimmed)) return null;
+    // A hand-edited or previously-persisted value can carry CR/LF, other
+    // control characters, or non-ASCII text. See isValidAdminSecret.
+    if (!isValidAdminSecret(trimmed)) return null;
     return trimmed;
   } catch {
     // Private mode / disabled storage — treat as "no secret".
@@ -31,7 +49,11 @@ export function getAdminSecret(): string | null {
  */
 export function setAdminSecret(secret: string): boolean {
   const trimmed = (secret ?? "").trim();
-  if (!trimmed) return false;
+  // Same predicate as the read path, so a secret can never be reported as
+  // saved and then be unusable at the fetch site. Rejecting here is what makes
+  // the false return meaningful: callers surface a real error instead of
+  // retrying an unauthenticated fetch.
+  if (!isValidAdminSecret(trimmed)) return false;
   if (typeof window === "undefined") return false;
   try {
     window.localStorage.setItem(ADMIN_SECRET_STORAGE_KEY, trimmed);

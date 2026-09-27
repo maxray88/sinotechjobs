@@ -234,6 +234,7 @@ export const translations = {
         save: "Save",
         clear: "Clear",
         storageError: "The secret could not be saved: browser storage is unavailable (e.g. private mode or storage blocked). Allow site storage and try again.",
+        invalidFormatError: "The secret was not saved: it is empty or contains characters that are not allowed. Only standard ASCII characters work: letters, digits, and common symbols. Re-enter the secret and try again.",
       },
     },
     profile: {
@@ -546,6 +547,7 @@ export const translations = {
         save: "保存",
         clear: "清除",
         storageError: "密钥保存失败：浏览器存储不可用（例如无痕模式或已禁用网站存储）。请允许网站存储后重试。",
+        invalidFormatError: "密钥未保存：内容为空，或包含不允许的字符。仅支持标准 ASCII 字符：字母、数字和常用符号。请重新输入密钥后重试。",
       },
     },
     profile: {
@@ -858,6 +860,7 @@ export const translations = {
         save: "Speichern",
         clear: "Löschen",
         storageError: "Der Schlüssel konnte nicht gespeichert werden: Der Browser-Speicher ist nicht verfügbar (z. B. privater Modus oder Speicher blockiert). Erlaube den Website-Speicher und versuche es erneut.",
+        invalidFormatError: "Der Schlüssel wurde nicht gespeichert: Die Eingabe ist leer oder enthält unzulässige Zeichen. Nur Standard-ASCII-Zeichen funktionieren: Buchstaben, Ziffern und gängige Symbole. Bitte gib den Schlüssel erneut ein und versuche es noch einmal.",
       },
     },
     profile: {
