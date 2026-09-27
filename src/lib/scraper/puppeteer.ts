@@ -1,4 +1,4 @@
-import puppeteer, { type Browser } from "puppeteer";
+import puppeteer, { type Browser, type Page } from "puppeteer";
 import chromium from "@sparticuz/chromium";
 
 let browserInstance: Browser | null = null;
@@ -50,7 +50,8 @@ export async function closeBrowser(): Promise<void> {
 
 export async function renderPage(
   url: string,
-  options: PuppeteerOptions = {}
+  options: PuppeteerOptions = {},
+  signal?: AbortSignal
 ): Promise<string | null> {
   const {
     waitForSelector,
@@ -59,11 +60,24 @@ export async function renderPage(
     extraWaitMs = 2000,
   } = options;
 
-  let page = null;
+  let page: Page | null = null;
+  let onAbort: (() => void) | null = null;
 
   try {
+    if (signal?.aborted) return null;
+
     const browser = await getBrowser();
     page = await browser.newPage();
+
+    // Puppeteer has no AbortSignal support, so aborting is expressed as closing
+    // the page: that rejects the in-flight goto/waitForSelector immediately
+    // instead of leaving Chromium busy until its own timeout expires.
+    if (signal) {
+      onAbort = () => {
+        void page?.close().catch(() => {});
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
 
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -100,13 +114,18 @@ export async function renderPage(
 
     await autoScroll(page, scrollDelay);
 
-    await delay(extraWaitMs);
+    await delay(extraWaitMs, signal);
+
+    if (signal?.aborted) return null;
 
     const html = await page.content();
     return html;
   } catch {
     return null;
   } finally {
+    if (signal && onAbort) {
+      signal.removeEventListener("abort", onAbort);
+    }
     if (page) {
       try {
         await page.close();
@@ -135,8 +154,22 @@ async function autoScroll(page: import("puppeteer").Page, delayMs: number): Prom
   }, delayMs);
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 export async function renderMultiplePages(

@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { scraperSources } from "@/lib/scraper/sources";
 import type { ScrapeReport } from "@/lib/scraper/types";
 import type { HealthEntry } from "@/lib/scraper/health";
+import { useLang } from "@/components/LanguageProvider";
+import { buildAuthHeaders, clearAdminSecret, setAdminSecret } from "@/lib/admin-auth";
 
 interface SourceInfo {
   id: string;
@@ -51,16 +53,25 @@ interface ScrapeReportResponse {
 }
 
 export default function AdminPage() {
+  const { t } = useLang();
   const [data, setData] = useState<ScrapeResponse | null>(null);
   const [scraping, setScraping] = useState(false);
   const [result, setResult] = useState<ScrapeReportResponse["report"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reports, setReports] = useState<ScrapeReport[]>([]);
+  // Set when /api/scrape answers 401, i.e. a stored secret is missing or wrong.
+  const [needsAuth, setNeedsAuth] = useState(false);
+  const [secretInput, setSecretInput] = useState("");
   const initialized = useRef(false);
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch("/api/scrape");
+      const res = await fetch("/api/scrape", { headers: buildAuthHeaders() });
+      if (res.status === 401) {
+        setNeedsAuth(true);
+        return;
+      }
+      setNeedsAuth(false);
       const json = await res.json();
       setData(json);
       if (json.reports) setReports(json.reports);
@@ -82,9 +93,14 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/scrape", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...buildAuthHeaders() },
         body: JSON.stringify({ action: "scrape-all" }),
       });
+      if (res.status === 401) {
+        setNeedsAuth(true);
+        setScraping(false);
+        return;
+      }
       const json: ScrapeReportResponse = await res.json();
       if (json.success && json.report) {
         setResult(json.report);
@@ -105,9 +121,14 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/scrape", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...buildAuthHeaders() },
         body: JSON.stringify({ action: "scrape-one", sourceId }),
       });
+      if (res.status === 401) {
+        setNeedsAuth(true);
+        setScraping(false);
+        return;
+      }
       const json: ScrapeReportResponse = await res.json();
       if (json.success && json.report) {
         setResult(json.report);
@@ -124,11 +145,15 @@ export default function AdminPage() {
   const handleClear = async () => {
     if (!confirm("Delete all scraped jobs? This cannot be undone.")) return;
     try {
-      await fetch("/api/scrape", {
+      const res = await fetch("/api/scrape", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...buildAuthHeaders() },
         body: JSON.stringify({ action: "clear" }),
       });
+      if (res.status === 401) {
+        setNeedsAuth(true);
+        return;
+      }
       fetchData();
     } catch {
       setError("Failed to clear");
@@ -140,9 +165,13 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/scrape", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...buildAuthHeaders() },
         body: JSON.stringify({ action: "re-enable", sourceId }),
       });
+      if (res.status === 401) {
+        setNeedsAuth(true);
+        return;
+      }
       const json = await res.json();
       if (json.reEnabled) {
         fetchData();
@@ -152,6 +181,21 @@ export default function AdminPage() {
     } catch {
       setError("Network error during re-enable");
     }
+  };
+
+  const handleSaveSecret = () => {
+    setAdminSecret(secretInput);
+    setSecretInput("");
+    setError(null);
+    // Retry immediately so the dashboard either populates or asks again.
+    fetchData();
+  };
+
+  const handleClearSecret = () => {
+    clearAdminSecret();
+    setSecretInput("");
+    setNeedsAuth(false);
+    setError(null);
   };
 
   const stats = data?.stats;
@@ -164,6 +208,60 @@ export default function AdminPage() {
       <p style={{ color: "var(--muted-foreground)", marginBottom: "1rem", fontSize: "0.875rem" }}>
         Manage job scraping sources and trigger scraping runs
       </p>
+      {needsAuth && (
+        <div
+          style={{
+            border: "1px solid #fcd34d",
+            background: "#fffbeb",
+            borderRadius: "0.5rem",
+            padding: "0.75rem 1rem",
+            marginBottom: "1.5rem",
+            fontSize: "0.875rem",
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>{t.admin.secret.title}</div>
+          <div style={{ color: "var(--muted-foreground)", marginBottom: "0.6rem", fontSize: "0.8125rem" }}>
+            {t.admin.secret.hint}
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSaveSecret();
+            }}
+            style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}
+          >
+            <input
+              type="password"
+              value={secretInput}
+              onChange={(e) => setSecretInput(e.target.value)}
+              placeholder={t.admin.secret.placeholder}
+              autoComplete="off"
+              aria-label={t.admin.secret.title}
+              style={{
+                flex: "1 1 240px",
+                minWidth: "200px",
+                padding: "0.4rem 0.6rem",
+                fontSize: "0.875rem",
+                border: "1px solid var(--border)",
+                borderRadius: "0.375rem",
+                background: "var(--background)",
+                color: "inherit",
+              }}
+            />
+            <button type="submit" className="btn-accent" style={{ fontSize: "0.8125rem", padding: "0.4rem 0.9rem" }}>
+              {t.admin.secret.save}
+            </button>
+            <button
+              type="button"
+              onClick={handleClearSecret}
+              className="btn-outline"
+              style={{ fontSize: "0.8125rem", padding: "0.4rem 0.9rem" }}
+            >
+              {t.admin.secret.clear}
+            </button>
+          </form>
+        </div>
+      )}
       {stats && stats.dataStore && (
         <div style={{ marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
           <span

@@ -32,18 +32,28 @@ export async function GET(request: NextRequest) {
   // Results are collected as each source completes, so a timeout still has a
   // partial report to write instead of discarding everything already scraped.
   const partialResults: ScrapeResult[] = [];
+  const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
 
   try {
     // Guard against hanging scrapes — Vercel maxDuration is 300s, we timeout at 280s to allow graceful error handling.
-    const results = (await Promise.race([
-      scrapeAllSources(sources, undefined, (r) => {
+    // The signal is what actually stops the work: the timer aborts the in-flight
+    // fetch/render, scrapeAllSources unwinds through its finally block (closing
+    // Chromium), and only then do we report the timeout. A bare Promise.race
+    // would leave the scrape running with an orphaned browser.
+    timeout = setTimeout(() => controller.abort(), 280000);
+    const results = await scrapeAllSources(
+      sources,
+      undefined,
+      (r) => {
         partialResults.push(r);
-      }),
-      new Promise<never>((_, reject) => {
-        timeout = setTimeout(() => reject(new Error("Cron timeout after 280s")), 280000);
-      }),
-    ])) as Awaited<ReturnType<typeof scrapeAllSources>>;
+      },
+      controller.signal
+    );
+
+    if (controller.signal.aborted) {
+      throw new Error("Cron timeout after 280s");
+    }
 
     const allRawJobs = results.flatMap((r) => r.jobs);
     // DATA_STORE switching is handled inside addScrapedJobsAsync (json vs supabase)
@@ -79,13 +89,28 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: true, mode: "weekly", result }, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+
+    // Bank whatever the aborted run managed to scrape before it died, so a
+    // timeout does not throw away already-fetched jobs. Best-effort only.
+    let bankedAdded = 0;
+    const partialJobs = partialResults.flatMap((r) => r.jobs);
+    if (partialJobs.length > 0) {
+      try {
+        const res = await addScrapedJobsAsync(partialJobs);
+        bankedAdded = res.added;
+        console.log(`[cron/weekly] banked ${bankedAdded} of ${partialJobs.length} partial jobs after failure`);
+      } catch (bankErr) {
+        console.error("[cron/weekly] partial jobs could not be written", bankErr);
+      }
+    }
+
     const errorReport = {
       timestamp: new Date().toISOString(),
       totalSources: sources.length,
       successfulSources: partialResults.filter((r) => r.errors.length === 0).length,
       totalJobsFound: partialResults.reduce((sum, r) => sum + r.jobsFound, 0),
       totalJobsFiltered: partialResults.reduce((sum, r) => sum + r.jobsFiltered, 0),
-      newJobsAdded: 0,
+      newJobsAdded: bankedAdded,
       results: partialResults,
       error: message,
     } as unknown as ScrapeReport;

@@ -19,8 +19,23 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchWithRetry(url: string, retries = 2, requestOptions?: ScraperSource["requestOptions"]): Promise<string | null> {
+// Caller cancellation (cron timeout) and the per-request timeout must both
+// abort the fetch, otherwise a hung request outlives the scrape budget.
+function combineSignals(timeoutMs: number, signal?: AbortSignal): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  if (!signal) return timeoutSignal;
+  return AbortSignal.any([timeoutSignal, signal]);
+}
+
+async function fetchWithRetry(
+  url: string,
+  retries = 2,
+  requestOptions?: ScraperSource["requestOptions"],
+  signal?: AbortSignal
+): Promise<string | null> {
   for (let attempt = 0; attempt <= retries; attempt++) {
+    // Cancelled mid-run: stop immediately instead of burning the retry budget.
+    if (signal?.aborted) return null;
     try {
       const headers: Record<string, string> = {
         "User-Agent": getRandomUserAgent(),
@@ -35,7 +50,7 @@ async function fetchWithRetry(url: string, retries = 2, requestOptions?: Scraper
         headers,
         method: (requestOptions?.method as string) ?? "GET",
         body: requestOptions?.body,
-        signal: AbortSignal.timeout(15000),
+        signal: combineSignals(15000, signal),
       });
 
       if (!response.ok) {
@@ -48,6 +63,7 @@ async function fetchWithRetry(url: string, retries = 2, requestOptions?: Scraper
 
       return await response.text();
     } catch {
+      if (signal?.aborted) return null;
       if (attempt < retries) {
         await delay(2000 * (attempt + 1));
         continue;
@@ -80,21 +96,22 @@ function isPlausibleScrapingApiPayload(body: string, sourceType?: ScraperSource[
 
 export async function fetchViaScrapingAPI(
   url: string,
-  sourceType?: ScraperSource["type"]
+  sourceType?: ScraperSource["type"],
+  signal?: AbortSignal
 ): Promise<string | null> {
   const key = process.env.SCRAPING_API_KEY;
   const provider = (process.env.SCRAPING_API_PROVIDER || "scrapingbee").toLowerCase();
   if (!key) throw new Error("SCRAPING_API_KEY missing");
   if (provider === "scrapingbee") {
     const apiUrl = `https://app.scrapingbee.com/api/v1/?api_key=${encodeURIComponent(key)}&url=${encodeURIComponent(url)}&render_js=true&premium_proxy=true&country_code=de`;
-    const res = await fetch(apiUrl, { signal: AbortSignal.timeout(30000) });
+    const res = await fetch(apiUrl, { signal: combineSignals(30000, signal) });
     if (!res.ok) throw new Error(`ScrapingBee ${res.status}`);
     const body = await res.text();
     return isPlausibleScrapingApiPayload(body, sourceType) ? body : null;
   }
   if (provider === "scraperapi") {
     const apiUrl = `https://api.scraperapi.com?api_key=${encodeURIComponent(key)}&url=${encodeURIComponent(url)}`;
-    const res = await fetch(apiUrl, { signal: AbortSignal.timeout(30000) });
+    const res = await fetch(apiUrl, { signal: combineSignals(30000, signal) });
     if (!res.ok) throw new Error(`ScraperAPI ${res.status}`);
     const body = await res.text();
     return isPlausibleScrapingApiPayload(body, sourceType) ? body : null;
@@ -102,7 +119,7 @@ export async function fetchViaScrapingAPI(
   throw new Error(`Unknown provider ${provider}`);
 }
 
-export async function scrapeSource(source: ScraperSource): Promise<ScrapeResult> {
+export async function scrapeSource(source: ScraperSource, signal?: AbortSignal): Promise<ScrapeResult> {
   const startTime = Date.now();
   const errors: string[] = [];
 
@@ -140,7 +157,7 @@ export async function scrapeSource(source: ScraperSource): Promise<ScrapeResult>
     const tryFetch = async (engine: string, query: string): Promise<string | null> => {
       const url = buildUrl(engine, query);
       try {
-        const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+        const res = await fetch(url, { signal: combineSignals(15000, signal) });
         const text = await res.text();
         if (!res.ok) {
           lastError = `SearchAPI ${engine} HTTP ${res.status}: ${text.slice(0, 500)}`;
@@ -164,6 +181,10 @@ export async function scrapeSource(source: ScraperSource): Promise<ScrapeResult>
     };
 
     for (const query of queries) {
+      if (signal?.aborted) {
+        errors.push(`[${query}] scrape cancelled before request`);
+        break;
+      }
       let rawJson: string | null = null;
       rawJson = await tryFetch("google_jobs", query);
       if (!rawJson) {
@@ -298,7 +319,7 @@ export async function scrapeSource(source: ScraperSource): Promise<ScrapeResult>
     };
   }
 
-  const { html, fetchMode } = await fetchWithFallback(source, errors);
+  const { html, fetchMode } = await fetchWithFallback(source, errors, signal);
 
   // Ensure fetchMode logging for direct when html came from scraping-api/puppeteer? Already handled.
   // If html still null, fetchMode remains undefined.
@@ -341,16 +362,22 @@ export async function scrapeSource(source: ScraperSource): Promise<ScrapeResult>
 
 async function fetchWithFallback(
   source: ScraperSource,
-  errors: string[]
+  errors: string[],
+  signal?: AbortSignal
 ): Promise<{ html: string | null; fetchMode?: FetchMode }> {
   // Errors from individual fallback attempts are local: if a later attempt
   // succeeds they must not be merged into `errors`, otherwise the source is
   // reported as failed even though it produced content.
   const attemptErrors: string[] = [];
 
+  if (signal?.aborted) {
+    errors.push(`Scrape cancelled before fetching ${source.id}`);
+    return { html: null };
+  }
+
   if (source.scrapingApi && process.env.SCRAPING_API_KEY) {
     try {
-      const apiHtml = await fetchViaScrapingAPI(source.url, source.type);
+      const apiHtml = await fetchViaScrapingAPI(source.url, source.type, signal);
       if (apiHtml) {
         console.log(`[scraper] ${source.id} fetched via scraping-api`);
         return { html: apiHtml, fetchMode: "scraping-api" };
@@ -369,7 +396,7 @@ async function fetchWithFallback(
         waitTimeout: source.puppeteerOptions?.waitTimeout,
         scrollDelay: source.puppeteerOptions?.scrollDelay,
         extraWaitMs: source.puppeteerOptions?.extraWaitMs,
-      });
+      }, signal);
       if (puppeteerHtml) {
         console.log(`[scraper] ${source.id} fetched via puppeteer`);
         return { html: puppeteerHtml, fetchMode: "puppeteer" };
@@ -379,7 +406,7 @@ async function fetchWithFallback(
       attemptErrors.push(`Puppeteer error for ${source.id}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
-  const direct = await fetchWithRetry(source.url, 2, source.requestOptions);
+  const direct = await fetchWithRetry(source.url, 2, source.requestOptions, signal);
   if (direct) {
     console.log(`[scraper] ${source.id} fetched via direct`);
     return { html: direct, fetchMode: "direct" };
@@ -600,7 +627,8 @@ async function loadRecentReports(): Promise<unknown[]> {
 export async function scrapeAllSources(
   sources: ScraperSource[],
   recentReports?: unknown[],
-  onResult?: (result: ScrapeResult) => void
+  onResult?: (result: ScrapeResult) => void,
+  signal?: AbortSignal
 ): Promise<ScrapeResult[]> {
   const results: ScrapeResult[] = [];
 
@@ -608,20 +636,28 @@ export async function scrapeAllSources(
 
   const usesPuppeteer = sources.some((s) => s.enabled && s.jsRendered);
 
-  for (const source of sources) {
-    if (shouldSkipSource(source, reports)) {
-      console.log(`[scraper] skip disabled ${source.id}`);
-      continue;
+  try {
+    for (const source of sources) {
+      if (signal?.aborted) {
+        console.log("[scraper] abort requested — stopping before next source");
+        break;
+      }
+      if (shouldSkipSource(source, reports)) {
+        console.log(`[scraper] skip disabled ${source.id}`);
+        continue;
+      }
+      const result = await scrapeSource(source, signal);
+      results.push(result);
+      onResult?.(result);
+      await delay(1000 + Math.random() * 2000);
     }
-    const result = await scrapeSource(source);
-    results.push(result);
-    onResult?.(result);
-    await delay(1000 + Math.random() * 2000);
-  }
 
-  if (usesPuppeteer) {
-    await closeBrowser();
+    return results;
+  } finally {
+    // Must run on every exit path — including an aborted run — otherwise the
+    // Chromium process is orphaned and leaks for the rest of the invocation.
+    if (usesPuppeteer) {
+      await closeBrowser();
+    }
   }
-
-  return results;
 }

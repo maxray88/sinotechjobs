@@ -438,7 +438,8 @@ describe("fallback chain and fetchMode", () => {
 
     expect(result.fetchMode).toBe("puppeteer");
     expect(mockedRenderPage).toHaveBeenCalledTimes(1);
-    expect(mockedRenderPage).toHaveBeenCalledWith("https://example.com/api4", expect.any(Object));
+    // 3rd arg is the optional AbortSignal, undefined when no cancellation was requested.
+    expect(mockedRenderPage).toHaveBeenCalledWith("https://example.com/api4", expect.any(Object), undefined);
     expect(result.jobsFiltered).toBe(1);
     // console.warn should have been called for scrapingApi failure
     expect(console.warn).toHaveBeenCalled();

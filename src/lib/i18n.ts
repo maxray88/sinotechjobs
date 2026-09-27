@@ -226,6 +226,13 @@ export const translations = {
         rejected: "Rejected",
         error: "Something went wrong. Please try again.",
       },
+      secret: {
+        title: "Admin secret required",
+        hint: "The scrape API is protected. Enter the CRON_SECRET value to continue.",
+        placeholder: "CRON_SECRET",
+        save: "Save",
+        clear: "Clear",
+      },
     },
     profile: {
       title: "Candidate Profile",
@@ -529,6 +536,13 @@ export const translations = {
         rejected: "已拒绝",
         error: "出错了，请重试。",
       },
+      secret: {
+        title: "需要管理员密钥",
+        hint: "抓取接口已受保护。请输入 CRON_SECRET 以继续操作。",
+        placeholder: "CRON_SECRET",
+        save: "保存",
+        clear: "清除",
+      },
     },
     profile: {
       title: "候选人资料",
@@ -831,6 +845,13 @@ export const translations = {
         published: "Auf der Jobbörse veröffentlicht",
         rejected: "Abgelehnt",
         error: "Etwas ist schiefgelaufen. Bitte erneut versuchen.",
+      },
+      secret: {
+        title: "Admin-Schlüssel erforderlich",
+        hint: "Die Scrape-API ist geschützt. Gib den CRON_SECRET-Wert ein, um fortzufahren.",
+        placeholder: "CRON_SECRET",
+        save: "Speichern",
+        clear: "Löschen",
       },
     },
     profile: {
