@@ -22,7 +22,7 @@
 - [ ] DPO：是否需要指定 Datenschutzbeauftragter（>20 人常态处理个人信息则强制）；如指定则公示联系方式
 - [ ] 数据清单：账户、简历（含 CV、语言、签证状态）、职位、匹配分、通知、日志
 - [ ] 每一类数据的目的 + 法律依据（Art. 6(1)(a)/(b)/(f)）
-- [ ] 接收方：可见简历的雇主（仅 visible=Fluoroscopy 公开）、子处理者（Vercel、Supabase，EU 区域；列出 DPA 链接）
+- [ ] 接收方：可见简历的雇主（仅 visible=true 公开）、子处理者（Vercel、Supabase，EU 区域；列出 DPA 链接）
 - [ ] 存储期限：注销即匿名化简历；财务记录保留 7 年（Aufbewahrungspflicht）
 - [ ] 用户权利：查阅/更正/删除/限制/可携带/反对/撤回 + 投诉监管机构（注明所属州 Landes-DSB）
 - [ ] Cookie/追踪：技术必要 Cookie 清单；Plausible/分析工具启用前补同意横幅（consent banner）
@@ -35,7 +35,7 @@
 - [ ] 薪资必填规则（§7.5 EU Pay Transparency：所有职位须含最低薪资，2026-06 指令大限前已生效）
 - [ ] 雇主广告合规责任条款 + 违规下架流程
 - [ ] 变更通知期 14 天 + 版本号/生效日更新流程（`legal_documents.version`）
-- [ ] `user_acceptances` 表（如需接受记录）：本迁移未建表，需要时另起 005 迁移
+- [ ] `user_acceptances` 表（如需接受记录）：`004_matching_legal.sql` 未建表；`005_job_expiry.sql` 已占用 005（jobs 的 `expires_at` / `is_expired`），下一个可用编号为 `006`
 
 ## 4. DPA + Cookie（§7.2/7.4 剩余文档）
 

@@ -1,597 +1,472 @@
 # SinotechJobs — Project Handover Document
 
-> **Last updated:** 2026-08-28
+> **Last updated:** 2026-09-27
 > **Project location:** `~/01_Coding_Projects/05_Sinotech_Jobboard` (macOS) — **GitHub:** `maxray88/sinotechjobs` (public) — **Vercel:** `sinotechjobs.vercel.app` (`cvetqt9ui` READY) — **Supabase:** `nzlhmjcugibacpbiqtyr`
-> **Status:** Phase 5 done — Growth Hardening READY (SEO + sitemap 102 urls + blog + companies + OG + Plausible + health/watchdog), Phases 0–5 complete, Phase 6 WeChat decision-gated
+> **Status:** Phases 0–5 complete. 10-round security/correctness audit finished 2026-09-27 (TSC 0 / LINT 0 / build 0 / 1770 tests). Remaining work is non-code: German legal texts (lawyer) and the SearchAPI quota reset (2026-10-01). WeChat Mini Program still decision-gated.
+>
+> This file is the authoritative handover doc. Where it conflicts with code, the code wins — verify before acting.
 
 ---
 
 ## 1. Project Overview
 
 ### Concept
-A trilingual (EN/ZH/DE) job board platform connecting Chinese-speaking tech talent with employers in the DACH region (Germany, Austria, Switzerland). Focus areas: Computer Science, AI/ML, Robotics, Drones/UAV, and Remote positions where Chinese language skills are required or valued.
+A trilingual (EN/ZH/DE) job board connecting Chinese-speaking tech talent with employers in the DACH region (Germany, Austria, Switzerland). Focus areas: Computer Science, AI/ML, Robotics, Drones/UAV, and Remote positions where Chinese language skills are required or valued.
 
 ### Value Proposition
-- **For candidates:** Centralized portal for DACH tech jobs where Chinese language is an asset — not available on StepStone, Indeed, or LinkedIn as a filterable criterion
-- **For employers:** Targeted access to a niche talent pool that general job boards cannot filter for
-- **Key differentiator:** Chinese-language filter + DACH tech focus + bilingual job descriptions
+- **Candidates:** a portal for DACH tech jobs where Chinese is a filterable criterion — not available on StepStone, Indeed, or LinkedIn
+- **Employers:** targeted access to a niche bilingual talent pool
+- **Differentiator:** Chinese-language filter + DACH tech focus + bilingual job descriptions
+
+### Data model note
+The board serves **real scraped jobs only**. The 32 curated demo jobs are no longer served at runtime (see §11, "Deprecated sample jobs"). Do not document or run sample-data seeding as a routine step.
 
 ### Tech Stack
 | Layer | Technology |
 |-------|-----------|
-| Framework | Next.js 16 (App Router) + React 19 |
+| Framework | Next.js 16.3 (App Router) + React 19.2 |
 | Language | TypeScript 5 |
 | Styling | Tailwind CSS 4 + inline styles for dynamic theming |
 | HTML Parsing | cheerio 1.2 |
-| JS-Rendered Scraping | Puppeteer 25 + @sparticuz/chromium (serverless) |
-| Storage | Supabase (Postgres) with JSON fallback via `DATA_STORE` switch (`supabase` \| `json`) — `data/scraped-jobs.json` used when `DATA_STORE=json` |
-| Supabase Client | `@supabase/supabase-js` 2.54 |
-| Deployment | Vercel (cron jobs configured) |
+| JS-Rendered Scraping | Puppeteer 25 + `@sparticuz/chromium` (serverless) |
+| Storage | Supabase (Postgres) via `DATA_STORE=supabase`; JSON file fallback via `DATA_STORE=json` (local only) |
+| Supabase Client | `@supabase/supabase-js` 2.54, `@supabase/ssr` 0.5, magic-link auth |
+| Payments | Stripe 14 (`checkout` + `webhook`) |
+| Email | Resend 4 |
+| Validation | Zod 3.23 (`src/lib/validations/`) |
+| Tests | Vitest 4 — 23 files, 1770 tests |
+| Deployment | Vercel (cron configured in `vercel.json`) |
 | Package Manager | npm |
 
 ---
 
 ## 2. Completed Work Summary
 
-### Phase 0–1: MVP (DONE)
-- [x] Next.js 16 project scaffold with Tailwind CSS 4
-- [x] Trilingual UI (EN/ZH/DE) with instant language switching (localStorage persistence)
-- [x] Landing page: hero section, live stats, value props, featured jobs preview, email capture
-- [x] Job board page (`/jobs`) with full filtering: field, location, language level, employment type, visa sponsorship, remote-friendly + search
-- [x] Job detail pages (`/jobs/[id]`) with bilingual descriptions, requirements, tags, apply button
-- [x] Employer job posting form (`/post`) with bilingual fields
-- [x] 32 curated sample jobs (real DACH companies: Bosch, BMW, KUKA, SAP, DeepL, NIO, BYD, Huawei, Siemens, etc.)
-- [x] Dark mode (automatic via `prefers-color-scheme`)
-- [x] Fully responsive (CSS grid auto-fit layouts)
+### Phase 0–1: MVP
+- [x] Next.js 16 scaffold, Tailwind CSS 4
+- [x] Trilingual UI (EN/ZH/DE) with instant switching (`LanguageProvider`, localStorage)
+- [x] Landing page: hero, live stats, value props, featured jobs, email capture
+- [x] Job board `/jobs` with filters (field, location, language level, employment type, visa sponsorship, remote, search)
+- [x] Job detail `/jobs/[id]` with bilingual descriptions, requirements, tags, apply
+- [x] Employer posting form `/post`
+- [x] Dark mode, responsive grid layouts
 
-### Phase 2: Scraping Infrastructure (DONE)
-- [x] Scraper architecture: `src/lib/scraper/` module with types, engine, storage, keywords, sources
-- [x] 13 configurable sources: StepStone RSS, Indeed HTML, LinkedIn, XING, Bosch, SAP, Huawei, DFKI, Fraunhofer, RemoteOK JSON API, DroneJobs, MachineLearningJobs, Make-it-in-Germany
-- [x] Chinese keyword matching engine: 30+ keywords with strong/weak classification (strong: "chinesisch", "mandarin", "中文"; weak: "china market", "APAC")
-- [x] Auto-detection: scraped text analyzed to detect field (AI/CS/robotics/drone/remote), language level, location, employment type, and tech tags (Python, C++, ROS, PyTorch, etc.)
-- [x] JSON file storage with deduplication (by URL), max 500 jobs
-- [x] API routes: `POST /api/scrape` (scrape-all/scrape-one/clear), `GET /api/scrape` (sources+stats+reports), `GET /api/jobs`
-- [x] Admin dashboard (`/admin`): stats, per-source scrape buttons, last result details, scrape history, clear function
-- [x] CLI script (`npm run scrape --verbose`): standalone cron-compatible scraper
-- [x] Scraped jobs integrated into job board with "Scraped" badge
+### Phase 2: Scraping Infrastructure
+- [x] `src/lib/scraper/` module: types, engine, storage, keywords, sources, health
+- [x] Chinese keyword matcher, strong/weak classification
+- [x] Auto-detection of field, language level, location, employment type, tech tags
+- [x] Deduplication by URL, storage caps
+- [x] `POST /api/scrape` (scrape-all / scrape-one / clear), `GET /api/scrape` (sources + stats + reports)
+- [x] Admin dashboard `/admin` (secret-gated, see §4)
+- [x] CLI `npm run scrape` / `npm run scrape:verbose`
 
-### Phase 2.5: Puppeteer for JS-Rendered Pages (DONE)
-- [x] `src/lib/scraper/puppeteer.ts`: Headless Chrome module
-  - Auto-detects environment: `@sparticuz/chromium` on Vercel/Lambda, local Chrome otherwise
-  - Auto-scroll for lazy-loaded content
-  - `waitForSelector` per-source configurable
-  - Resource interception (blocks images/media/fonts for speed)
-  - Browser instance reused across sources, closed after scrape
-- [x] 5 sources marked `jsRendered: true` with Puppeteer options: Indeed, LinkedIn, XING, Bosch, Huawei
-- [x] Engine auto-routes: `jsRendered` → Puppeteer, otherwise → `fetch`
-- [x] Admin dashboard shows `+Puppeteer` in source type
-- [x] CLI shows `[JS+Puppeteer]` tag
+### Phase 2.5: Puppeteer
+- [x] `src/lib/scraper/puppeteer.ts`: auto-detect `@sparticuz/chromium` on Vercel vs local Chrome, auto-scroll, `waitForSelector`, resource blocking, AbortSignal support, one browser reused and closed after the run
+- [x] 4 sources marked `jsRendered: true` (Bosch, LinkedIn, XING, Huawei)
+- [x] Engine routes `jsRendered` → Puppeteer, else `fetch`
 
-### Vercel Cron Configuration (DONE)
-- [x] `vercel.json` with single daily cron:
-  - Daily at 06:00 UTC → `/api/cron/daily` (Supabase-backed, `DATA_STORE=supabase`)
-  - Weekly route at `/api/cron/weekly` available (not scheduled by default)
-- [x] `CRON_SECRET` env var support for authentication (`Authorization: Bearer $CRON_SECRET`)
+### Phase 3: Employer + Candidate Features
+- [x] Supabase magic-link auth (`/auth/login`, `/auth/callback`, `/auth/logout`) + `src/middleware.ts` session refresh
+- [x] Candidate profile CRUD + visibility toggle (`/profile`)
+- [x] Saved jobs, saved filters, applications, CV upload
+- [x] Employer dashboard `/employer/dashboard`, posting submission to `employer_postings` (status `pending`)
+- [x] Admin approval queue `/admin/approvals` + `/api/admin/postings` (approve publishes the job; reject rolls back)
+- [x] Email notifications on approve/reject
+
+### Phase 4: Matching + Payments
+- [x] Weighted match scoring (8 soft scores) in `src/lib/matching.ts`; alert thresholds 85 (immediate) / 70 (digest)
+- [x] `POST /api/match` computes and persists scores `>= 70`; degrades gracefully if migration 004 is not applied
+- [x] Stripe checkout + webhook for tiers: featured €99, pinned €199, enterprise €499 (30 days each)
+- [x] Weekly email digest (`/api/cron/digest`), chunked fan-out
+- [x] Rate limiting (`src/lib/ratelimit.ts`) on public write paths
+
+### Phase 5: Growth Hardening
+- [x] SEO: metadata, JobPosting structured data, `sitemap.ts` (paged past the 1000-row cap), `robots.ts`
+- [x] Blog (`/blog`, `/blog/[slug]`) from `content/blog/*.md`; company profiles (`/companies/[slug]`)
+- [x] OG image pipeline (`docs/og-pipeline.md`, `scripts/generate-og.sh`)
+- [x] Scraper health matrix (`src/lib/scraper/health.ts`), watchdog (`src/lib/watchdog.ts`) with admin alert email
+- [x] Security headers in `next.config.ts`; `safeExternalUrl` rejects `javascript:` / `data:` / `vbscript:` / `file:` URLs
+
+### Audit (2026-09-27) — see §3
+- [x] 10 rounds, 3 roles, 92 defects fixed, 1608 → 1770 tests
 
 ---
 
-## 3. Project Structure
+## 3. Audit History
+
+A 10-round audit ran on 2026-09-27 with three rotating roles: **Claude Code** reviewed, **Codex** built the fixes, **Hermes** orchestrated. Each round re-reviewed the diffs of the earlier rounds.
+
+| Round | Commit | Scope | Tests after |
+|-------|--------|-------|-------------|
+| 1 | `b8fefbe` | security + robustness (scrape route was fully public) | 1615 |
+| 2 | `127beb4` | data layer + 28 regression tests | 1673 |
+| 3 | `5c32960` | UI hardening incl. `javascript:` XSS sink | 1690 |
+| 4 | `51a26c4` | headers, email header injection, fail-closed auth | 1698 |
+| 5 | `906b3f4` | regressions introduced by rounds 1–4 | 1748 |
+| 6 | `177affe` | sitemap + repo data/SEO path | 1751 |
+| 7 | `8285ce7` | public subscribe path | 1751 |
+| 8 | `b6b8dd8` | payments + candidate write paths | 1751 |
+| 9 | `45f8604` | employer postings + digest | 1762 |
+| 10 | `d9adf4f`, `78cafd9` | structured data/SEO + scraper health/CLI | 1770 |
+
+**Result:** 92 defects fixed; suite 1608 → 1770 tests; final state TSC 0 / LINT 0 / `next build` 0.
+
+**Two patterns worth preserving:**
+
+1. **Later rounds caught regressions introduced by earlier rounds.** Round 5 exists specifically because rounds 1–4 broke things. Round 6 had to rewrite the expiry test because an earlier test encoded the buggy shape rather than the intended semantics. Treat a fix as unverified until a later round has re-reviewed it.
+2. **Suspected vulnerabilities routinely did not hold.** Reviewers regularly investigated a suspected flaw and reported that it was not exploitable as suspected. Those negative results stopped the team from writing wrong-direction fixes and from adding tests that would have locked in a wrong model. When a reviewer reports "not a vulnerability", do not re-open it without new evidence.
+
+Re-running an audit is cheap relative to the regressions it prevents. If you touch auth, payments, the scraper, or the sitemap, expect to re-review the diff rather than only the new code.
+
+---
+
+## 4. Security Model
+
+This is the part of the codebase most likely to be broken by a well-meaning change. Read before touching any route.
+
+### CRON_SECRET gate
+`/api/scrape` (GET and POST) and **all** of `/api/cron/*` (`daily`, `weekly`, `digest`) require `Authorization: Bearer $CRON_SECRET`.
+
+- With `CRON_SECRET` set: the header must match exactly, or the route returns 401 with `Cache-Control: no-store`.
+- With `CRON_SECRET` unset: the routes **fail closed in production** (`NODE_ENV === "production"` → 401) and only allow unauthenticated requests in dev, with a console warning. Never invert this — an unauthenticated scrape drains paid quota, and `clear` wipes the jobs table.
+- `src/middleware.ts` deliberately does **not** exclude `api/cron` from its matcher. The middleware only refreshes Supabase cookies and never authorises, so excluding cron routes would have advertised them as unprotected. The real gate lives in the routes.
+
+### The `x-vercel-cron` header is not authentication
+`/api/cron/digest` explicitly rejects the `x-vercel-cron` header as a credential. That header is client-supplied and trivially forged, so treating it as authorisation would let any anonymous caller trigger the digest fan-out and email every account holding a saved filter. The Bearer token is the only accepted credential. Do not add `x-vercel-cron` as a fallback auth path in any route.
+
+### Stripe webhook fails closed
+`/api/stripe/webhook` requires `STRIPE_WEBHOOK_SECRET` and verifies the signature via `stripe.webhooks.constructEvent`. The **only** way to bypass verification is the explicit opt-in `ALLOW_UNVERIFIED_WEBHOOKS=true`, which is for local testing only. Without the secret and without that flag the route returns 400. It does not fall back on a missing env var and does not fall back on `NODE_ENV` — preview deployments and staging boxes are internet-reachable and would otherwise accept forged events that grant paid entitlements. Apply the same fail-closed rule to any new Stripe entry point.
+
+### Admin identity comes from the session
+Admin authorisation is read from the Supabase session: `getCurrentUser()` then `getProfileRole(user.id)` (`src/lib/auth.ts`). It is **never** taken from a request field, header, or body parameter. `/api/admin/postings` (approve/reject) additionally rate-limits on the admin's session user id rather than the client IP.
+
+The `/admin` **scraper dashboard** is a different mechanism: the operator pastes `CRON_SECRET` into the browser at runtime, it is held in `localStorage` (`src/lib/admin-auth.ts`), and replayed as a Bearer header. The secret is never baked into the client bundle.
+
+### Other standing rules
+- `next.config.ts` deliberately sets **no** `Content-Security-Policy`. Next.js emits inline bootstrap and streamed scripts, so a static CSP breaks every page. A correct CSP needs per-request nonces minted in middleware and threaded through — separate work. Do not "fix" this by adding a static CSP.
+- Rate-limit public write paths. Authenticated routes key on the session user id; public routes key on client IP.
+- `content/blog` slugs are validated with `path.basename` to reject traversal.
+
+---
+
+## 5. Project Structure
 
 ```
 sinotechjobs/
 ├── src/
+│   ├── middleware.ts               # Supabase session refresh (not an authz layer)
 │   ├── app/
-│   │   ├── layout.tsx              # Root layout (LanguageProvider + Navbar + Footer)
-│   │   ├── page.tsx                # Home (server) → HomeClient
-│   │   ├── HomeClient.tsx          # Home page client component
-│   │   ├── globals.css             # Global styles + CSS variables + dark mode
-│   │   ├── jobs/
-│   │   │   ├── page.tsx            # Jobs board (server) → JobsClient
-│   │   │   ├── JobsClient.tsx      # Jobs board client component with filters
-│   │   │   └── [id]/
-│   │   │       ├── page.tsx        # Job detail (server) → JobDetailClient
-│   │   │       └── JobDetailClient.tsx
-│   │   ├── post/
-│   │   │   └── page.tsx            # Employer job posting form
-│   │   ├── admin/
-│   │   │   └── page.tsx            # Scraper admin dashboard
-│   │   └── api/
-│   │       ├── scrape/route.ts     # Scraper API (GET: stats, POST: scrape/clear)
-│   │       ├── jobs/route.ts       # All jobs API (GET)
-│   │       ├── subscribe/route.ts  # Newsletter subscribe
-│   │       └── cron/
-│   │           ├── daily/route.ts  # Vercel Cron: daily 06:00 UTC
-│   │           └── weekly/route.ts # Weekly cron (manual / optional)
-│   ├── components/
-│   │   ├── LanguageProvider.tsx    # i18n context (EN/ZH/DE)
-│   │   ├── Navbar.tsx              # Nav + language switcher
-│   │   ├── Footer.tsx              # Footer with links
-│   │   └── EmailCapture.tsx        # Newsletter signup component
+│   │   ├── layout.tsx, page.tsx, HomeClient.tsx, globals.css
+│   │   ├── robots.ts, sitemap.ts
+│   │   ├── jobs/                   # board (page + JobsClient) and [id] detail
+│   │   ├── post/                   # employer posting form
+│   │   ├── pricing/                # tier comparison
+│   │   ├── profile/                # candidate profile
+│   │   ├── saved/                  # saved jobs + filters
+│   │   ├── blog/[slug]/            # blog from content/blog/*.md
+│   │   ├── companies/[slug]/       # employer pages from scraped data
+│   │   ├── employer/dashboard/     # employer posting management
+│   │   ├── admin/                  # scraper dashboard
+│   │   │   └── approvals/          # posting approval queue
+│   │   ├── auth/                   # login, callback, logout
+│   │   └── api/                    # see route table below
+│   ├── components/                 # LanguageProvider, Navbar, Footer, EmailCapture, …
 │   └── lib/
-│       ├── types.ts                # Core types (Job, JobField, etc.)
-│       ├── jobs.ts                 # 32 curated sample jobs
-│       ├── all-jobs.ts             # Combines sample + scraped jobs (Supabase/JSON via DATA_STORE)
-│       ├── i18n.ts                 # Full translations EN/ZH/DE
-│       ├── db/                     # Supabase (Postgres) — DATA_STORE=supabase
-│       │   ├── client.ts           # getSupabaseAdmin / getSupabasePublic
-│       │   ├── jobs-repo.ts        # Jobs CRUD
-│       │   ├── reports-repo.ts     # Scrape reports
-│       │   ├── email-repo.ts       # Email subscriptions
-│       │   ├── mappers.ts          # DB ↔ domain mappers
-│       │   ├── types.ts            # DB row types
-│       │   └── index.ts
-│       └── scraper/
-│           ├── types.ts            # Scraper types + rawToJob() + auto-detection
-│           ├── sources.ts          # 13 configured sources
-│           ├── engine.ts           # Core scraper (RSS/HTML/JSON API + Puppeteer routing)
-│           ├── keywords.ts         # Chinese keyword matcher (30+ keywords)
-│           ├── storage.ts          # Supabase or JSON fallback (DATA_STORE switch)
-│           ├── health.ts           # Health checks / scrape diagnostics
-│           └── puppeteer.ts         # Headless Chrome for JS-rendered pages
-├── scripts/
-│   ├── scrape.ts                   # CLI scraper script
-│   ├── seed.ts                     # Seeds 32 sample jobs to Supabase (npm run seed)
-│   └── measure-build.sh            # Build size + Puppeteer bundle measurement
-├── docs/
-│   └── build-report.md             # Build size & Puppeteer impact report
-├── db/
-│   └── migrations/
-│       └── 001_init.sql            # Supabase schema (jobs, scrape_reports, email_subscriptions, etc.)
-├── data/                           # Runtime JSON fallback (DATA_STORE=json, auto-created)
-│   ├── scraped-jobs.json           # Scraped jobs storage (fallback)
-│   └── scrape-reports.json         # Scrape history (last 20, fallback)
-├── vercel.json                     # Vercel Cron: single daily at 06:00 UTC → /api/cron/daily
-├── package.json
-├── tsconfig.json
-└── next.config.ts
+│       ├── types.ts                # core types (Job, JobField, …)
+│       ├── jobs.ts                 # DEPRECATED sample array (SAMPLE_MODE=false) — seed input only
+│       ├── all-jobs.ts             # DB-aware read path, paged, degrades rather than throws
+│       ├── auth.ts                 # getCurrentUser / getProfileRole / requireAuth / requireRole
+│       ├── admin-auth.ts           # client-side CRON_SECRET storage + Bearer header builder
+│       ├── matching.ts             # weighted scoring
+│       ├── match-scores.ts         # match_scores persistence (fault-tolerant)
+│       ├── ratelimit.ts, safe-url.ts, job-validation.ts, application-state-machine.ts
+│       ├── profile-completeness.ts, taxonomy.ts, analytics.ts, watchdog.ts
+│       ├── blog.ts, companies.ts, seo.ts, digest.ts, email.ts, i18n.ts
+│       ├── supabase/               # client, server, middleware
+│       ├── validations/            # Zod schemas
+│       ├── db/                     # client, jobs-repo, reports-repo, email-repo, mappers, types
+│       └── scraper/                # types, engine, storage, sources, keywords, health, puppeteer
+├── tests/                          # 23 vitest files, 1770 tests
+├── scripts/                        # scrape.ts, seed.ts, generate-og.sh, measure-build.sh
+├── content/blog/                   # 2 markdown posts (blue-card-visa-guide, dach-salary-benchmarks-2026)
+├── db/migrations/                  # 001..005, apply in order
+├── docs/                           # PRD.md, build-report.md, sources-compliance.md, og-pipeline.*, legal/, plans/
+├── data/                           # JSON fallback ONLY (local). Committed file is empty: {"jobs": []}
+├── vercel.json                     # one cron: daily 06:00 UTC → /api/cron/daily
+└── package.json
 ```
+
+### API routes (15 files)
+| Route | Methods | Auth |
+|-------|---------|------|
+| `/api/scrape` | GET, POST | `CRON_SECRET` |
+| `/api/cron/daily` | GET | `CRON_SECRET` |
+| `/api/cron/weekly` | GET | `CRON_SECRET` |
+| `/api/cron/digest` | GET | `CRON_SECRET` (rejects `x-vercel-cron`) |
+| `/api/jobs` | GET | public |
+| `/api/subscribe` | POST | public + IP rate limit |
+| `/api/postings` | GET, POST | session |
+| `/api/admin/postings` | POST | session + `admin` role, rate limited |
+| `/api/candidate/profile` | GET, PUT | session |
+| `/api/saved-jobs` | GET, POST, DELETE | session + IP rate limit |
+| `/api/saved-filters` | GET, POST, DELETE | session |
+| `/api/applications` | GET, PUT | session + IP rate limit |
+| `/api/cvs` | GET, POST, DELETE | session + IP/user rate limit |
+| `/api/match` | GET, POST | session (POST) |
+| `/api/stripe/checkout` | POST | session |
+| `/api/stripe/webhook` | POST | Stripe signature (fails closed) |
+
+### Migrations (`db/migrations/`, apply in order)
+| File | Adds |
+|------|------|
+| `001_init.sql` | Base schema: `jobs`, `scrape_reports`, `email_subscriptions`, `employer_postings`, `profiles` |
+| `002_auth_policies.sql` | RLS policies for magic-link auth (public read on `jobs`, service_role full access) + profile trigger |
+| `003_candidate_features.sql` | `candidate_profiles`, `saved_jobs`, `saved_filters`, `applications`, `cvs` + policies |
+| `004_matching_legal.sql` | `match_scores`, `notifications`, versioned trilingual `legal_documents` (ToS/Privacy seeds are abbreviated placeholders) |
+| `005_job_expiry.sql` | `jobs.expires_at` (default +60d) and `jobs.is_expired`; `listJobs` filters expired by default, daily cron flags overdue rows |
 
 ---
 
-## 4. How to Run
+## 6. How to Run
 
 ### Development
 ```bash
 cd ~/01_Coding_Projects/05_Sinotech_Jobboard
 npm install
-# Configure Supabase (required for production data store)
-# cp .env.example .env.local  # then set SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
-# DATA_STORE=supabase  # default; use DATA_STORE=json for local file fallback
-npm run seed           # Seeds 32 sample jobs to Supabase (requires SUPABASE_URL + SERVICE_ROLE_KEY)
-npm run dev          # http://localhost:3000  # DATA_STORE=supabase by default; DATA_STORE=json for file fallback
+cp .env.example .env.local     # then fill in Supabase keys + CRON_SECRET
+DATA_STORE=json npm run dev    # http://localhost:3000 — file fallback, no Supabase needed
+DATA_STORE=supabase npm run dev
 ```
 
-### Production Build
+### Verification (must be clean before you call anything done)
 ```bash
+npx tsc --noEmit     # 0 errors
+npm run lint         # 0 problems
+npm test             # 23 files, 1770 tests
 npm run build
-npm start            # http://localhost:3000
 ```
 
-### Lint & Type Check
+### Scraper (CLI)
 ```bash
-npm run lint         # ESLint
-npx tsc --noEmit     # Type check only
+npm run scrape
+npm run scrape:verbose
+npx tsx scripts/scrape.ts --source=adzuna-chinese-de
 ```
 
-### Run Scraper (CLI)
+### Scraper (API) — all require the Bearer header
 ```bash
-npm run scrape                                    # All enabled sources
-npm run scrape:verbose                            # With per-source details
-npx tsx scripts/scrape.ts --source=indeed-chinese-de  # Single source
-# Seeding (Supabase):
-npm run seed                                      # Seed 32 sample jobs to Supabase
-DATA_STORE=json npm run dev                       # Run with JSON file fallback (no Supabase)
-DATA_STORE=supabase npm run dev                   # Run with Supabase (default, requires env)
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/scrape
+curl -X POST -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" \
+  http://localhost:3000/api/cron/daily
 ```
 
-### Run Scraper (API)
+### Sample-data seeding — NOT a routine step
+`npm run seed` upserts the deprecated `sampleJobs` array from `src/lib/jobs.ts`. Nothing serves them in production. The script refuses to write to a non-local Supabase host unless `SEED_FORCE=1` is set explicitly. There is no reason to run it for an ordinary task; do not put it on a deployment checklist.
+
+### Deploy
 ```bash
-# Get stats and sources
-curl http://localhost:3000/api/scrape
-
-# Scrape all enabled sources
-curl -X POST http://localhost:3000/api/scrape -H "Content-Type: application/json" -d '{"action":"scrape-all"}'
-
-# Scrape single source
-curl -X POST http://localhost:3000/api/scrape -H "Content-Type: application/json" -d '{"action":"scrape-one","sourceId":"indeed-chinese-de"}'
-
-# Clear all scraped jobs
-curl -X POST http://localhost:3000/api/scrape -H "Content-Type: application/json" -d '{"action":"clear"}'
-```
-
-### Deploy to Vercel
-```bash
-cd ~/01_Coding_Projects/05_Sinotech_Jobboard
-npx vercel          # Preview deploy
-npx vercel --prod   # Production deploy (auto-deploy from main on push)
-# Vercel env required: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, DATA_STORE=supabase, CRON_SECRET
-# Cron: single daily at 06:00 UTC → /api/cron/daily (see vercel.json)
+npx vercel          # preview
+npx vercel --prod   # production (main also auto-deploys on push)
 ```
 
 ---
 
-## 5. Key Configuration
+## 7. Key Configuration
 
-### Environment Variables
+### Environment variables
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `SUPABASE_URL` | Required (when `DATA_STORE=supabase`) | Supabase project URL — project `nzlhmjcugibacpbiqtyr` (`https://nzlhmjcugibacpbiqtyr.supabase.co`) |
-| `SUPABASE_ANON_KEY` | Required | Supabase anon key (client-safe) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Required (server) | Supabase service role key — server-only, never expose to client (used by `src/lib/db/client.ts` + `scripts/seed.ts`) |
-| `DATA_STORE` | Optional | `supabase` (default, production — Postgres) \| `json` (local file fallback: `data/scraped-jobs.json`) |
-| `CRON_SECRET` | Optional | Protects `/api/cron/*` and `/api/scrape` cron endpoints (`Authorization: Bearer $CRON_SECRET`) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL (`https://nzlhmjcugibacpbiqtyr.supabase.co`) |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes | Client-safe publishable key |
+| `SUPABASE_SECRET_KEY` | Yes (server) | Server-only secret key |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Legacy | Still present in `.env.example`; some libs expect the old names |
+| `DATA_STORE` | Yes | `supabase` in every deployed environment; `json` for local dev only |
+| `CRON_SECRET` | Yes (prod) | Gates `/api/scrape` and `/api/cron/*`; also the `/admin` dashboard login |
+| `SCRAPING_API_KEY` | Optional | Managed scraping API, tried first for `scrapingApi: true` sources |
+| `SEARCHAPI_KEY` (or `SEARCH_API_KEY`) | Optional | Google Jobs source; currently disabled, see §8 |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Yes (if payments live) | Webhook fails closed without the secret |
+| `ALLOW_UNVERIFIED_WEBHOOKS` | **Never in prod** | Local-only opt-out of Stripe signature verification |
+| `RESEND_API_KEY` | Optional | Email: digest, employer notifications |
+| `PUPPETEER_SKIP_DOWNLOAD` | Optional | Leave `false`; `@sparticuz/chromium` supplies the binary on Vercel |
 
-### Adding/Editing Job Sources
-Edit `src/lib/scraper/sources.ts`. Each source has:
+### DATA_STORE handling
+`src/lib/scraper/storage.ts` and `src/lib/all-jobs.ts` branch on `process.env.DATA_STORE === "supabase"`.
+
+- **`supabase` is required in production.** The JSON files under `data/` are ephemeral on Vercel serverless — a write there is discarded when the invocation ends, so production scraping would appear to succeed and store nothing.
+- `json` mode reads and writes `data/scraped-jobs.json` and `data/scrape-reports.json`. The committed `data/scraped-jobs.json` is `{"jobs": [], "lastUpdated": "2026-08-29"}` — empty, and expected to stay that way.
+- `json` mode is a local dev convenience. Never set it in Vercel.
+- The switch is read fresh from `process.env` on each access, not cached at module load.
+
+### Scrape sources (`src/lib/scraper/sources.ts`) — 16 total, 11 enabled
+| id | type | enabled | notes |
+|----|------|---------|-------|
+| `stepstone-chinese-de` | rss | no | dead feed |
+| `indeed-chinese-de` | rss | no | anti-bot; superseded by Adzuna/Jobware |
+| `adzuna-chinese-de` | json-api | yes | |
+| `jobware-chinese-de` | html | yes | |
+| `bosch-careers-china` | html | yes | `jsRendered`, `scrapingApi` |
+| `linkedin-chinese-de` | html | no | `jsRendered`, `scrapingApi`; login-walled |
+| `xing-chinese-de` | html | no | `jsRendered`, `scrapingApi`; login-walled |
+| `sapprosoftmoms-china` | html | yes | |
+| `huawei-europe-china` | html | yes | `jsRendered`, `scrapingApi` |
+| `dfki-ai-china` | html | yes | `scrapingApi` |
+| `fraunhofer-ai-china` | html | yes | `scrapingApi` |
+| `make-it-in-germany` | html | yes | `scrapingApi` |
+| `machinelearningjobs-de` | html | yes | `scrapingApi` |
+| `remoteok-chinese` | json-api | yes | `scrapingApi` |
+| `dronejobs-de` | html | yes | |
+| `google-jobs-searchapi` | json-api | **no** | SearchAPI monthly quota exhausted — see §8 |
+
+`scrapingApi: true` sources try the managed API first when `SCRAPING_API_KEY` is set, then fall back to Puppeteer/fetch on failure, on an implausible payload, or on a block/challenge page.
+
+### Adding or editing a source
+Edit `src/lib/scraper/sources.ts`. Per-source shape:
+
 ```typescript
 {
-  id: "unique-id",
-  name: "Display Name",
-  nameZh: "中文名称",
-  type: "rss" | "html" | "json-api",   // rss: parse XML, html: cheerio, json-api: JSON.parse
-  url: "https://...",
-  enabled: true/false,
-  jsRendered: true/false,               // true = use Puppeteer (for SPA sites)
-  puppeteerOptions: {                   // Only if jsRendered: true
-    waitForSelector: ".css-selector",  // Wait for this element before scraping
-    waitTimeout: 10000,                // ms
-    scrollDelay: 2000,                 // ms for auto-scroll
-    extraWaitMs: 2000,                 // Additional wait after scroll
-  },
-  keywords: ["chinesisch", "chinese", "mandarin"],
-  selectors: {                          // Only for type: "html"
-    jobCard: ".css-selector",
-    title: ".css-selector",
-    company: ".css-selector",
-    location: ".css-selector",
-    link: ".css-selector",
-    description: ".css-selector",
-  },
-  defaultField: "ai",                  // Optional fallback field
-  defaultLocationCode: "de",           // Optional fallback location
+  id: "unique-id", name: "…", nameZh: "…",
+  type: "rss" | "html" | "json-api",
+  url: "https://…", enabled: true,
+  jsRendered: true,              // optional — routes to Puppeteer
+  puppeteerOptions: { waitForSelector: "…", waitTimeout: 10000, scrollDelay: 2000, extraWaitMs: 2000 },
+  scrapingApi: true,             // optional — try managed API first
+  keywords: ["chinesisch", "chinese", "mandarin", "中文"],
+  selectors: { jobCard, title, company, location, link, description },  // html only
+  defaultField: "ai", defaultLocationCode: "de",
 }
 ```
 
-### Vercel Cron Schedule
-Edit `vercel.json` (single daily cron):
-```json
-{
-  "crons": [
-    { "path": "/api/cron/daily", "schedule": "0 6 * * *" }
-  ]
-}
-```
-Daily at 06:00 UTC → `/api/cron/daily` (Supabase-backed). Weekly cron at `/api/cron/weekly` is available but not scheduled by default — trigger manually or add a second entry if needed.
+Test with `npx tsx scripts/scrape.ts --source=<id> --verbose`.
 
-### Known Limitations
-- **Storage:** Production uses Supabase (Postgres) via `src/lib/db/*` with `DATA_STORE=supabase` (project `nzlhmjcugibacpbiqtyr`). JSON file fallback (`data/scraped-jobs.json`, `data/scrape-reports.json`) remains for local dev when `DATA_STORE=json`; files are ephemeral on Vercel serverless — do not rely on JSON in production.
-- **Puppeteer on Vercel:** `@sparticuz/chromium` binary is ~50MB. Vercel Hobby plan has 250MB function size limit. Pro plan recommended for production. See `docs/build-report.md` and `scripts/measure-build.sh` for size tracking.
-- **Anti-bot detection:** Puppeteer alone won't bypass Cloudflare/PerimeterX. For production scraping of LinkedIn/Indeed, consider a scraping API service (ScrapingBee, ScraperAPI, Apify).
-- **Cron:** Vercel Cron is single daily at 06:00 UTC → `/api/cron/daily`. Weekly full scrape via `/api/cron/weekly` is not scheduled by default.
+### Vercel cron
+`vercel.json` holds exactly one entry — `{ "path": "/api/cron/daily", "schedule": "0 6 * * *" }` — because Vercel Hobby allows a single cron. Do not add a second entry. `/api/cron/weekly` and `/api/cron/digest` exist but are unscheduled; trigger them externally (GitHub Actions) with `Authorization: Bearer $CRON_SECRET`.
+
+`/api/cron/daily` runs tiered by UTC weekday: Monday scrapes all enabled sources, other days scrape only `CHEAP_SOURCE_IDS` = `["google-jobs-searchapi", "remoteok-chinese"]`. Because `google-jobs-searchapi` is currently disabled, non-Monday runs effectively scrape **only** `remoteok-chinese`. That is where Google Jobs lands first on re-enable.
 
 ---
 
-## 6. Future Work Packages
+## 8. Known Limitations
 
-### Package A: Database Migration (HIGH PRIORITY)
-**Goal:** Replace JSON file storage with Supabase (PostgreSQL) for persistent, queryable storage.
+### Non-code blockers
+1. **German legal texts are placeholders.** The `legal_documents` seeds in `004_matching_legal.sql` are abbreviated drafts containing `[PLACEHOLDER]` markers; the tracked checklist is `docs/legal/IMPRINT-PRIVACY-TODO.md`. Outstanding: Impressum (§5 DDG / Art. 5 E-Commerce-RL), Datenschutzerklärung (GDPR Art. 13/14), DPA (AV-Vertrag with Vercel/Supabase), and Cookie policy — which additionally needs a consent banner before analytics are enabled. There are no `/imprint`, `/privacy`, or `/terms` pages yet. **A German IT-Recht lawyer must review the full text before any public launch** (design-doc budget ~€500–1,000 one-off). The §7.1 statement *"Jobbörse, keine Vermittlung — keine Vermittlung von Arbeitsverhältnissen, keine Erlaubnis nach §1 GewO"* must survive verbatim in all three languages; a lawyer's rewrite may not delete it.
+2. **`match_scores` is empty** because no candidate has scored ≥ 70 against any job. The table exists, `/api/match` persists correctly, and the read path is sound — there is simply no data above the threshold. Expected behaviour, not a bug. Do not "fix" it by lowering the threshold without first understanding the scoring model.
+3. **Google Jobs stays disabled until 2026-10-01.** `google-jobs-searchapi` was turned off in commit `57fb297` because the SearchAPI monthly quota was exhausted. Re-enable only after 2026-10-01 and keep total monthly calls under 100 — the source fires 4 queries (chinesisch / chinese speaking / mandarin / China Market) with a `google_jobs` → `google` engine fallback, so a naive re-enable can burn the quota within a single daily run.
 
-**Tasks:**
-1. Create Supabase project, get URL + anon key
-2. Install `@supabase/supabase-js`
-3. Create schema:
-   ```sql
-   CREATE TABLE jobs (
-     id TEXT PRIMARY KEY,
-     title TEXT, title_zh TEXT,
-     company TEXT, company_zh TEXT,
-     field TEXT, location TEXT, location_code TEXT,
-     language_level TEXT, employment_type TEXT,
-     salary_range TEXT,
-     description TEXT, description_zh TEXT,
-     requirements TEXT[], requirements_zh TEXT[],
-     tags TEXT[],
-     application_url TEXT,
-     posted_date DATE,
-     remote_friendly BOOLEAN,
-     visa_sponsorship BOOLEAN,
-     featured BOOLEAN,
-     source TEXT,           -- 'sample' | 'scraped' | 'manual'
-     source_id TEXT,
-     created_at TIMESTAMPTZ DEFAULT NOW()
-   );
-
-   CREATE TABLE scrape_reports (
-     id SERIAL PRIMARY KEY,
-     timestamp TIMESTAMPTZ,
-     total_sources INT,
-     successful_sources INT,
-     total_jobs_found INT,
-     total_jobs_filtered INT,
-     new_jobs_added INT,
-     report JSONB
-   );
-
-   CREATE TABLE email_subscriptions (
-     email TEXT PRIMARY KEY,
-     subscribed_at TIMESTAMPTZ DEFAULT NOW(),
-     language TEXT DEFAULT 'en'
-   );
-
-   CREATE TABLE employer_postings (
-     id SERIAL PRIMARY KEY,
-     job_title TEXT, job_title_zh TEXT,
-     company TEXT, location TEXT,
-     field TEXT, language_level TEXT,
-     employment_type TEXT, salary_range TEXT,
-     description TEXT, description_zh TEXT,
-     requirements TEXT,
-     application_url TEXT,
-     remote_friendly BOOLEAN,
-     visa_sponsorship BOOLEAN,
-     status TEXT DEFAULT 'pending',   -- 'pending' | 'approved' | 'rejected'
-     submitted_at TIMESTAMPTZ DEFAULT NOW()
-   );
-   ```
-4. Replace `src/lib/scraper/storage.ts` with Supabase client
-5. Update `src/lib/all-jobs.ts` to query Supabase
-6. Update API routes to use Supabase
-7. Add env vars: `SUPABASE_URL`, `SUPABASE_ANON_KEY`
-
-### Package B: Employer Portal & Job Approval Workflow (MEDIUM)
-**Goal:** Employers can register, post jobs, and track applications. Admin can approve/reject.
-
-**Tasks:**
-1. Employer registration/login (Supabase Auth)
-2. Employer dashboard (`/employer/dashboard`) — manage their job postings
-3. Job submission saves to `employer_postings` table (status: pending)
-4. Admin approval page (`/admin/approvals`) — review and approve/reject
-5. Email notification to employer on approval
-6. Premium posting tiers: featured (€99), pinned (€199), enterprise (€499/mo)
-7. Stripe payment integration for premium postings
-
-### Package C: Candidate Features (MEDIUM)
-**Goal:** Candidates can create profiles, save jobs, set up alerts.
-
-**Tasks:**
-1. Candidate registration/login (Supabase Auth)
-2. Candidate profile: skills, experience, languages, preferred locations
-3. Saved jobs feature (bookmark/favorite)
-4. Job alert preferences: field, location, language level → email notifications
-5. Resume/CV upload (Supabase Storage)
-6. Application tracking (applied → screening → interview → offer)
-7. Profile visibility toggle (opt-in to recruiter talent pool)
-
-### Package D: Scraping API Integration (MEDIUM)
-**Goal:** Replace self-hosted Puppeteer with managed scraping API for better reliability.
-
-**Tasks:**
-1. Sign up for ScrapingBee or ScraperAPI (get API key)
-2. Add `SCRAPING_API_KEY` env var
-3. Update `src/lib/scraper/engine.ts` — add `fetchViaScrapingAPI()` function
-4. New source option: `scrapingApi: true` flag
-5. Fallback chain: scraping API → Puppeteer → fetch
-6. Proxy rotation and country targeting (DE IPs for German job boards)
-7. Rate limiting and quota management
-
-### Package E: WeChat Mini Program (HIGH for China reach)
-**Goal:** Build a WeChat Mini Program to reach Chinese candidates in China.
-
-**Tasks:**
-1. Register WeChat Mini Program account (requires Chinese business license or individual developer)
-2. Build Mini Program frontend (WeChat-specific framework, similar to React)
-3. Backend: reuse existing Next.js API routes
-4. Features: job search, job detail, save jobs, apply via WeChat
-5. WeChat login (OAuth)
-6. WeChat push notifications for new jobs
-7. WeChat Pay for premium features
-
-### Package F: Content & SEO (MEDIUM)
-**Goal:** Drive organic traffic via SEO and content marketing.
-
-**Tasks:**
-1. Blog section (`/blog`) with articles:
-   - "DACH Tech Industry Guide for Chinese Professionals"
-   - "Visa & Work Permit Guide: Germany Blue Card"
-   - "Salary Benchmarks: AI/Robotics in Germany 2026"
-   - "German Workplace Culture for Chinese Engineers"
-2. SEO optimization: meta tags, structured data (JobPosting schema), sitemap.xml
-3. Company profiles (`/companies/[slug]`) — employer branding pages
-4. Salary benchmark tool (anonymized data)
-5. Interview prep guides
-6. DACH relocation guide
-
-### Package G: Analytics & Monitoring (LOW)
-**Goal:** Track platform metrics and user behavior.
-
-**Tasks:**
-1. Google Analytics 4 or Plausible Analytics (privacy-friendly)
-2. Track key metrics: job views, applications, search queries, filter usage
-3. Admin analytics dashboard: job posting trends, source effectiveness, conversion rates
-4. Scrape monitoring: success rate, jobs found per source, error tracking
-5. Email open/click tracking for newsletter
-6. Alert system: notify admin if scrape fails 3x in a row
+### Technical limitations
+4. **Puppeteer on Vercel:** `@sparticuz/chromium` is ~50MB against the 250MB function limit. Hobby may work; Pro is safer. See `docs/build-report.md` and `scripts/measure-build.sh`.
+5. **Anti-bot:** self-hosted Puppeteer does not defeat Cloudflare/PerimeterX. For LinkedIn/Indeed/StepStone a managed scraping API is the realistic path — which is why those three are disabled.
+6. **No CSP.** See §4. A static `Content-Security-Policy` breaks every page in this app; it needs per-request nonces.
+7. **Digest consent gap.** `/api/cron/digest` treats "has ≥ 1 saved filter" as the send gate because the schema has no opt-in column. A real consent column requires a migration; until then the 100-user per-run cap bounds the blast radius. See the `CONSENT` comment in that route.
+8. **Single cron.** Vercel Hobby allows one schedule. Weekly and digest work is unscheduled.
+9. **The JSON store is not a production store.** See §7.
 
 ---
 
-## 7. Development Roadmap
+## 9. Future Work
 
-### Sprint 1 (Weeks 1–2): Database Migration
-- Set up Supabase
-- Migrate storage from JSON to PostgreSQL
-- Update all API routes
-- Deploy to Vercel with env vars
-- Test scraping on Vercel (verify Puppeteer works serverless)
+### Package E: WeChat Mini Program (decision-gated, HIGH for China reach)
+- [ ] Register a Mini Program account (requires a Chinese business licence or individual developer status)
+- [ ] Mini Program frontend against the existing `/api/*` routes
+- [ ] WeChat login (OAuth) mapped to the Supabase user
+- [ ] Save jobs, apply via WeChat
+- [ ] WeChat push notifications; WeChat Pay if monetising
 
-### Sprint 2 (Weeks 3–4): Employer Portal
-- Employer auth (Supabase Auth)
-- Job posting form → database (with approval workflow)
-- Admin approval page
-- Email notifications (Resend or SendGrid)
-- Premium posting tiers + Stripe integration
+### Legal / compliance — gates public launch (see §8.1)
+- [ ] Lawyer review of Impressum, Privacy, ToS, DPA, Cookie policy
+- [ ] Ship `/imprint`, `/privacy`, `/terms` in all three languages, reachable from the footer within 2 clicks
+- [ ] Cookie consent banner before enabling analytics
+- [ ] Cross-border transfer consent for mainland-China registrations (PIPL)
+- [ ] End-to-end delete-right verification
 
-### Sprint 3 (Weeks 5–6): Candidate Features
-- Candidate auth
-- Job save/bookmark
-- Job alert email preferences
-- Profile page
-- Application tracking
+### Product gaps
+- [ ] Candidate opt-in column + notification preferences (unblocks honest digest sends)
+- [ ] Premium tier differentiation — all three tiers currently differ only in price, not duration or placement
+- [ ] CV parsing and recommendation surfaces beyond score ≥ 70
+- [ ] Company profile pages beyond what scraped data can derive
+- [ ] More DACH employer career pages as sources
 
-### Sprint 4 (Weeks 7–8): Scraping Enhancement
-- Integrate ScrapingBee/ScraperAPI for blocked sites
-- Add 10+ new sources (German company career pages)
-- Scrape detail pages (not just listings) for full descriptions
-- Scheduled scrape verification on Vercel Cron
-
-### Sprint 5 (Weeks 9–10): Content & SEO
-- Blog section with CMS (Sanity or Contentlayer)
-- SEO: sitemap, structured data, meta tags
-- Company profile pages
-- DACH visa/relocation guide content
-
-### Sprint 6 (Weeks 11–12): WeChat Mini Program
-- WeChat Mini Program frontend
-- Integrate with existing API
-- WeChat login + push notifications
-- Launch on WeChat platform
-
-### Sprint 7+ (Ongoing): Growth
-- Analytics dashboard
-- A/B testing
-- Community features (Chinese tech professionals in DACH)
-- Virtual job fairs
-- Partnership with DACH tech hubs (UnternehmerTUM, Cyber Valley)
+### Operational
+- [ ] Per-request nonce plumbing for CSP
+- [ ] Alert on consecutive scrape failures (`src/lib/watchdog.ts` exists; wiring review pending)
+- [ ] Re-enable and re-tune Google Jobs after 2026-10-01 within the 100-call monthly budget
 
 ---
 
-## 8. Business Model
+## 10. Business Model
 
-### Revenue Streams
+| Stream | Description | Pricing |
+|--------|-------------|---------|
+| Job posting tiers | featured / pinned / enterprise, 30 days | free / €99 / €199 / €499 |
+| Recruitment placement | Full-cycle headhunting for bilingual tech roles | €5,000–€15,000 per placement |
+| Employer branding | Sponsored company profiles, Chinese-language video interviews | €299–€999/mo |
+| Talent pool subscription | Recruiter access to opt-in candidate profiles | €199/mo |
+| WeChat advertising | Sponsored posts to Chinese professionals | €99–€499/post |
+| Premium content | "How to apply in DACH" courses, interview prep | €29–€99/course |
+| Career fairs | Virtual or in-person DACH–China tech job fairs | €500–€5,000/booth |
 
-| Stream | Description | Pricing | Phase |
-|--------|-------------|---------|-------|
-| **Job posting fees** | Free tier (basic, 30 days) + Premium (highlighted, 90 days) + Enterprise (unlimited) | Free / €99 / €499/mo | Phase 2 |
-| **Recruitment placement** | Full-cycle headhunting for hard-to-fill bilingual tech roles | €5,000–€15,000 per placement | Phase 3 |
-| **Employer branding** | Sponsored company profiles, video interviews in Chinese | €299–€999/mo | Phase 3 |
-| **Talent pool subscription** | Recruiters pay for access to opt-in verified candidate profiles | €199/mo | Phase 3 |
-| **WeChat advertising** | Sponsored posts in WeChat ecosystem reaching Chinese professionals | €99–€499/post | Phase 4 |
-| **Premium content / courses** | "How to apply in DACH" courses, German tech vocab, interview prep | €29–€99/course | Phase 4 |
-| **Career fair events** | Virtual or in-person DACH-China tech job fairs | €500–€5,000/booth | Phase 4 |
+Only the posting tiers are implemented (Stripe checkout + webhook). Everything else is unbuilt.
 
-### Cost Structure (Monthly)
+**Cost structure (monthly, approximate):** hosting €0–20, Supabase €0–25, domain+email €5–20, scraping API €0–49, email €0–20, marketing €50–1,000.
 
-| Item | Phase 1 (MVP) | Phase 3 (Growth) |
-|------|---------------|------------------|
-| Hosting (Vercel) | €0 (Hobby) | €20 (Pro) |
-| Database (Supabase) | €0 (Free) | €25 (Pro) |
-| Domain + Email | €5 | €20 |
-| Scraping API (ScrapingBee) | €0 | €49 |
-| Email service (Resend) | €0 | €20 |
-| Marketing (SEO, WeChat, LinkedIn) | €50 | €500–1,000 |
-| Part-time content/community manager | €0 | €1,000–2,000 |
-| **Total** | **~€55** | **~€1,600–3,100** |
+**Metrics to track:** job postings/month, registered candidates, application conversion rate, time-to-fill, newsletter + WeChat reach, employer repeat rate, scrape success rate, organic traffic.
 
-### Key Metrics to Track
-
-1. **Job postings/month** (supply side health)
-2. **Registered candidates** (demand side growth)
-3. **Application conversion rate** (platform effectiveness)
-4. **Time-to-fill** (for recruitment service)
-5. **WeChat followers / newsletter subscribers** (audience reach)
-6. **Employer repeat rate** (revenue stickiness)
-7. **Scrape success rate** (data freshness)
-8. **Organic traffic** (SEO effectiveness)
-
-### Go-to-Market Strategy
-
-**Target Candidates:**
-- Chinese students graduating from DACH universities (CS, AI, robotics)
-- Chinese professionals already in DACH seeking better positions
-- Chinese professionals in China wanting to relocate (need visa sponsorship)
-
-**Target Employers:**
-- Automotive: VW, BMW, Bosch, Continental, ZF (huge China market)
-- Robotics/Automation: KUKA, Festo, Pilz, Beckhoff
-- Drones: Wingcopter, Quantum-Systems, Dronetech
-- AI/Tech: SAP, Celonis, DeepL, Hugging Face Berlin
-- Chinese companies in DACH: Huawei Europe, BYD Europe, NIO Munich, DJI, Xiaomi DE
-- Research: Fraunhofer, Max Planck, DFKI, ETH Zurich
-
-**Acquisition Channels:**
-1. WeChat Official Account + Mini Program — primary Chinese audience channel
-2. Xiaohongshu (小红书) — Chinese professionals sharing DACH work experiences
-3. LinkedIn — targeting Chinese professionals in DACH
-4. University Chinese student associations (TU9 universities)
-5. Zhihu / V2EX — Chinese tech communities
-6. SEO — German + Chinese keywords
-
-### Target Employers (Outreach List for Phase 2)
-- **Automotive:** VW, BMW, Bosch, Continental, ZF, Mercedes-Benz
-- **Robotics:** KUKA, Festo, Pilz, Beckhoff, ABB
-- **Drones:** Wingcopter, Quantum-Systems, Atlas Dynamics, FlyNow, Dronetech
-- **AI/Tech:** SAP, Celonis, DeepL, Hugging Face, GitLab
-- **Chinese in DACH:** Huawei, BYD, NIO, DJI, Xiaomi
-- **Research:** DFKI, Fraunhofer, Max Planck, ETH Zurich
+**Go-to-market:** Chinese students graduating from DACH universities; Chinese professionals already in DACH; Chinese professionals in China needing visa sponsorship. Employer targets: automotive (VW, BMW, Bosch, Continental, ZF), robotics (KUKA, Festo, Pilz, Beckhoff, ABB), drones (Wingcopter, Quantum-Systems), AI/tech (SAP, Celonis, DeepL, Hugging Face), Chinese-in-DACH (Huawei, BYD, NIO, DJI, Xiaomi), research (Fraunhofer, Max Planck, DFKI, ETH Zurich). Channels: WeChat, Xiaohongshu, LinkedIn, TU9 Chinese student associations, Zhihu/V2EX, SEO.
 
 ---
 
-## 9. Technical Notes for Continuing Agent
+## 11. Technical Notes for Continuing Agent
 
-### Architecture Decisions
-- **Server/Client split:** Pages that need `fs`/DB (Supabase or file fallback) are server components. Interactive pages (filters, forms) are client components. Pattern: `page.tsx` (server) → `*Client.tsx` (client). `DATA_STORE` switch is server-only.
-- **Language context:** `LanguageProvider` wraps the entire app. Use `useLang()` hook to access `lang`, `setLang()`, and `t` (translations).
-- **Job data flow:** `sampleJobs` (static, `src/lib/jobs.ts`, 32 seeded) + `scrapedJobs` (dynamic — Supabase `jobs` table when `DATA_STORE=supabase`, else `data/scraped-jobs.json`) → `getAllJobs()` in `src/lib/all-jobs.ts` (now DB-aware via `src/lib/db/*`); seed via `npm run seed` (`scripts/seed.ts` + `db/migrations/001_init.sql`, Supabase project `nzlhmjcugibacpbiqtyr`)
-- **Scraper routing:** Engine checks `source.jsRendered` → if true, uses Puppeteer (`renderPage()`); otherwise uses `fetch()` (via `fetchWithRetry()`)
+### Architecture decisions
+- **Server/client split:** pages needing the DB or `fs` are server components that pass data to a `*Client.tsx` client component. `DATA_STORE` is server-only.
+- **Language:** `LanguageProvider` wraps the app; `useLang()` gives `lang`, `setLang()`, `t`. New strings go into all three languages in `src/lib/i18n.ts` (`translations.en` / `.zh` / `.de`) — a missing key is a visible gap, not a silent fallback.
+- **Read path:** `getAllJobs()` / `getJobById()` in `src/lib/all-jobs.ts` → Supabase when `DATA_STORE=supabase`, else the JSON file. It pages at 1000 with a hard stop at 20 pages and degrades to a partial or empty list rather than throwing, so the sitemap and detail pages cannot 500 because the DB hiccuped.
+- **Expiry:** `listJobs` defaults to `includeExpired=false`; the job detail page still returns expired jobs with a badge. Migration 005 is not applied in every environment, so the repo layer degrades gracefully instead of erroring.
+- **Match scores:** persistence degrades to `{ saved: 0, degraded: true }` when migration 004 is absent, instead of throwing.
+- **Scraper routing:** `scrapingApi` + `SCRAPING_API_KEY` → managed API; else `jsRendered` → Puppeteer; else `fetch`. Every path is abortable (`AbortSignal`) so the 280s cron timeout actually stops the work and closes Chromium rather than leaving an orphan browser.
 
-### Adding a New Job Source
-1. Add entry to `src/lib/scraper/sources.ts` with unique `id`
-2. Set `type`: `"rss"` (XML), `"html"` (cheerio selectors), or `"json-api"` (JSON response)
-3. If site is JS-rendered (SPA), set `jsRendered: true` + `puppeteerOptions.waitForSelector`
-4. Add CSS selectors for HTML sources
-5. Set `enabled: true` to activate
-6. Test: `npx tsx scripts/scrape.ts --source=your-source-id --verbose`
+### Deprecated sample jobs
+`src/lib/jobs.ts` still exports a 32-entry `sampleJobs` array and `SAMPLE_MODE = false`. The array is **not** served: in `supabase` mode `getAllJobs()` returns DB jobs only, and `getJobById` consults a sample id solely as a last-resort fallback. It survives only as the input to `scripts/seed.ts`. Treat it as dead weight — do not restore it to the board, and do not add seeding to any workflow.
 
-### Adding a New Page
-1. Create `src/app/[route]/page.tsx`
-2. If it needs server-side data (fs, DB): make it a server component, pass data to a `*Client.tsx` component
-3. If it's interactive (forms, filters): use `"use client"` directive
-4. Wrap content in the existing layout (Navbar + Footer are in root layout)
-5. Use `useLang()` for translations — add new keys to all 3 languages in `src/lib/i18n.ts`
+### Adding a page
+1. Create `src/app/<route>/page.tsx`.
+2. Server component if it needs the DB or `fs`; hand off to a `*Client.tsx` if interactive.
+3. `"use client"` only when state, effects, or handlers are required.
+4. Navbar/Footer are already in the root layout.
+5. Add every new i18n key to all three languages.
 
-### Current i18n Keys
-All translation strings are in `src/lib/i18n.ts` under `translations.en`, `translations.zh`, `translations.de`. Structure:
-- `nav.*` — navigation items
-- `hero.*` — landing page hero section
-- `valueProps.*` — value proposition cards
-- `emailCapture.*` — newsletter signup
-- `jobs.*` — job board (filters, labels, badges)
-- `post.*` — employer posting form
-- `footer.*` — footer content
+### Adding an API route
+1. Decide the auth model first: public + rate limit, session, session + role, or a secret. Do not default to public.
+2. Session-based: `getCurrentUser()`; admin: `getProfileRole(user.id) === "admin"`. Never read identity from the request.
+3. Secret-based: mirror the `CRON_SECRET` block exactly, including the production fail-closed branch and the `Cache-Control: no-store` 401.
+4. Validate input with the Zod schemas in `src/lib/validations/`.
+5. Rate-limit, then add a test under `tests/`.
 
 ### Testing
-- Tests: `vitest` (`npm test`, `npm run test:watch`) — see `src/lib/scraper/health.test.ts` etc.; coverage via `npm run test -- --coverage`
-- Lint: `npm run lint`
-- Build: `npm run build` (includes TypeScript type checking) + `npx tsc --noEmit`
-- Build size: `scripts/measure-build.sh` → `docs/build-report.md`
-- API test: Use the admin dashboard at `/admin` or curl commands above (`/api/cron/daily`, `/api/jobs`, `/api/scrape`)
+- `npm test` (Vitest, 23 files, 1770 tests), `npm run test:watch`, `npm run test -- --coverage`
+- Tests live in `tests/` and `tests/unit/`; `vitest.config.ts` maps `@/` to `src/`
+- `npx tsc --noEmit` and `npm run lint` must both be 0
+- Prefer tests that assert **semantics** over shape — a shape-encoding test will happily pin a bug (round 6 had to rewrite one for exactly this reason)
 
-### Deployment Checklist
-- [ ] Set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` in Vercel (Supabase project `nzlhmjcugibacpbiqtyr`) + `DATA_STORE=supabase`
-- [ ] Set `CRON_SECRET` env var in Vercel (protects `/api/cron/*` + `/api/scrape`)
-- [ ] Set `PUPPETEER_SKIP_DOWNLOAD=false` (let Vercel download Chrome or use @sparticuz/chromium)
-- [ ] Run `npm run seed` once (or `npx tsx --env-file=.env.local scripts/seed.ts`) to seed 32 sample jobs — verify in Supabase dashboard
-- [ ] Verify Vercel Cron job registered (Vercel Dashboard → Settings → Cron Jobs): single daily at 06:00 UTC → `/api/cron/daily`
-- [ ] Test `/api/cron/daily` (with `Authorization: Bearer $CRON_SECRET`) and `/api/jobs` after deploy
-- [ ] Verify `DATA_STORE=supabase` in production; `data/` JSON fallback is local-only
+### Deployment checklist
+- [ ] `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY` in Vercel
+- [ ] `DATA_STORE=supabase` in Vercel — confirm it is not `json`
+- [ ] `CRON_SECRET` set in Vercel to a random value. Without it `/api/scrape` and `/api/cron/*` return 401 in production and nothing scrapes
+- [ ] `ALLOW_UNVERIFIED_WEBHOOKS` is **not** set on any deployed environment
+- [ ] `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` set if payments are live
+- [ ] Migrations 001 → 005 applied in order on the Supabase project
+- [ ] Cron registered in Vercel Dashboard → Settings → Cron Jobs: one entry, daily 06:00 UTC → `/api/cron/daily`
+- [ ] `SCRAPING_API_KEY` set if the `scrapingApi: true` sources should use the managed API
+- [ ] Smoke test: `curl -H "Authorization: Bearer $CRON_SECRET" https://sinotechjobs.vercel.app/api/scrape` returns stats, not 401
+- [ ] Smoke test: `/api/cron/digest` with only `x-vercel-cron: 1` and no Bearer header returns 401 — this is the regression to watch
+- [ ] Do **not** run `npm run seed` against production
 
 ---
 
-## 10. Contact & Context
+## 12. Contact & Context
 
-- **Project owner:** User (FBMHCA5)
-- **Original concept date:** 2026-08-11
-- **MVP completion:** 2026-08-11
-- **Tech lead:** GLM (via opencode)
-- **Environment:** macOS, Node 24, npm 11 — `~/01_Coding_Projects/05_Sinotech_Jobboard` (bash)
-- **Deploy:** Vercel `sinotechjobs.vercel.app` (auto-deploy from `main`), Cron daily 06:00 UTC → `/api/cron/daily`
-- **Database:** Supabase `nzlhmjcugibacpbiqtyr` (`DATA_STORE=supabase`, fallback `DATA_STORE=json` for local)
+- **Project owner:** user (FBMHCA5)
+- **Original concept:** 2026-08-11 · **MVP complete:** 2026-08-11
+- **Environment:** macOS, Node 24, npm 11
+- **Deploy:** Vercel `sinotechjobs.vercel.app` (auto-deploy from `main`)
+- **Database:** Supabase `nzlhmjcugibacpbiqtyr`
+- **Repo:** `maxray88/sinotechjobs` (public)
