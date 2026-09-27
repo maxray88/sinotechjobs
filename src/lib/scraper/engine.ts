@@ -15,8 +15,25 @@ function getRandomUserAgent(): string {
   return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+// Abort-aware sleep. Without the signal an aborted run still has to sit out
+// the full inter-source pause (and every retry backoff) before the caller can
+// unwind, which eats into the remaining cron budget for no reason.
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 // Caller cancellation (cron timeout) and the per-request timeout must both
@@ -55,7 +72,7 @@ async function fetchWithRetry(
 
       if (!response.ok) {
         if (attempt < retries) {
-          await delay(2000 * (attempt + 1));
+          await delay(2000 * (attempt + 1), signal);
           continue;
         }
         return null;
@@ -65,7 +82,7 @@ async function fetchWithRetry(
     } catch {
       if (signal?.aborted) return null;
       if (attempt < retries) {
-        await delay(2000 * (attempt + 1));
+        await delay(2000 * (attempt + 1), signal);
         continue;
       }
       return null;
@@ -148,6 +165,7 @@ export async function scrapeSource(source: ScraperSource, signal?: AbortSignal):
 
     const fetchMode: FetchMode = "direct";
     let lastError: string | null = null;
+    let cancelled = false;
     const seenUrls = new Set<string>();
     const jobs: ScrapedJobRaw[] = [];
 
@@ -182,7 +200,7 @@ export async function scrapeSource(source: ScraperSource, signal?: AbortSignal):
 
     for (const query of queries) {
       if (signal?.aborted) {
-        errors.push(`[${query}] scrape cancelled before request`);
+        cancelled = true;
         break;
       }
       let rawJson: string | null = null;
@@ -298,7 +316,9 @@ export async function scrapeSource(source: ScraperSource, signal?: AbortSignal):
     }
 
     if (jobs.length === 0 && errors.length === 0) {
-      errors.push("Failed to fetch from SearchAPI (all queries, both engines)");
+      if (!cancelled) {
+        errors.push("Failed to fetch from SearchAPI (all queries, both engines)");
+      }
     }
 
     const filtered = jobs.filter((job) => {
@@ -313,13 +333,32 @@ export async function scrapeSource(source: ScraperSource, signal?: AbortSignal):
       jobsFound: jobs.length,
       jobsFiltered: filtered.length,
       jobs: filtered,
-      errors,
+      // A cancelled run reports no errors: it says nothing about the source's
+      // health, and an "aborted" error would count it as failed downstream.
+      errors: cancelled ? [] : errors,
       duration: Date.now() - startTime,
       fetchMode,
+      ...(cancelled ? { cancelled: true } : {}),
     };
   }
 
-  const { html, fetchMode } = await fetchWithFallback(source, errors, signal);
+  const { html, fetchMode, cancelled } = await fetchWithFallback(source, errors, signal);
+
+  // Cancellation is not an outcome of the source: return an empty, error-free
+  // result flagged as cancelled so no downstream failure accounting (report
+  // stats, shouldAutoDisable) treats it as a broken source.
+  if (cancelled) {
+    return {
+      source,
+      jobsFound: 0,
+      jobsFiltered: 0,
+      jobs: [],
+      errors: [],
+      duration: Date.now() - startTime,
+      fetchMode,
+      cancelled: true,
+    };
+  }
 
   // Ensure fetchMode logging for direct when html came from scraping-api/puppeteer? Already handled.
   // If html still null, fetchMode remains undefined.
@@ -364,20 +403,23 @@ async function fetchWithFallback(
   source: ScraperSource,
   errors: string[],
   signal?: AbortSignal
-): Promise<{ html: string | null; fetchMode?: FetchMode }> {
+): Promise<{ html: string | null; fetchMode?: FetchMode; cancelled?: boolean }> {
   // Errors from individual fallback attempts are local: if a later attempt
   // succeeds they must not be merged into `errors`, otherwise the source is
   // reported as failed even though it produced content.
   const attemptErrors: string[] = [];
 
   if (signal?.aborted) {
-    errors.push(`Scrape cancelled before fetching ${source.id}`);
-    return { html: null };
+    return { html: null, cancelled: true };
   }
 
   if (source.scrapingApi && process.env.SCRAPING_API_KEY) {
     try {
       const apiHtml = await fetchViaScrapingAPI(source.url, source.type, signal);
+      // The abort can land while the managed API call is in flight. Re-check
+      // before interpreting the outcome: a rejected fetch here is a
+      // cancellation, not a broken source, and must not become an error.
+      if (signal?.aborted) return { html: null, cancelled: true };
       if (apiHtml) {
         console.log(`[scraper] ${source.id} fetched via scraping-api`);
         return { html: apiHtml, fetchMode: "scraping-api" };
@@ -385,6 +427,7 @@ async function fetchWithFallback(
       attemptErrors.push(`Scraping API returned a block/challenge page for ${source.url}`);
       console.warn(`[scraper] scrapingApi returned an implausible payload for ${source.id}, falling back`);
     } catch (e) {
+      if (signal?.aborted) return { html: null, cancelled: true };
       attemptErrors.push(`Scraping API failed for ${source.id}: ${e instanceof Error ? e.message : String(e)}`);
       console.warn(`[scraper] scrapingApi failed for ${source.id}, falling back: `, e);
     }
@@ -397,16 +440,19 @@ async function fetchWithFallback(
         scrollDelay: source.puppeteerOptions?.scrollDelay,
         extraWaitMs: source.puppeteerOptions?.extraWaitMs,
       }, signal);
+      if (signal?.aborted) return { html: null, cancelled: true };
       if (puppeteerHtml) {
         console.log(`[scraper] ${source.id} fetched via puppeteer`);
         return { html: puppeteerHtml, fetchMode: "puppeteer" };
       }
       attemptErrors.push(`Puppeteer failed to render: ${source.url}`);
     } catch (e) {
+      if (signal?.aborted) return { html: null, cancelled: true };
       attemptErrors.push(`Puppeteer error for ${source.id}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
   const direct = await fetchWithRetry(source.url, 2, source.requestOptions, signal);
+  if (signal?.aborted) return { html: null, cancelled: true };
   if (direct) {
     console.log(`[scraper] ${source.id} fetched via direct`);
     return { html: direct, fetchMode: "direct" };
@@ -624,7 +670,13 @@ async function loadRecentReports(): Promise<unknown[]> {
   }
 }
 
-export async function scrapeAllSources(
+// closeBrowser() tears down a module-level singleton shared by every scrape in
+// this process. A second concurrent run (double-clicked admin button, admin
+// scrape overlapping a warm cron lambda) would have its browser closed out
+// from under it mid-goto, so only one run may be in flight at a time.
+let activeScrape: Promise<ScrapeResult[]> | null = null;
+
+async function runScrapeAllSources(
   sources: ScraperSource[],
   recentReports?: unknown[],
   onResult?: (result: ScrapeResult) => void,
@@ -632,7 +684,10 @@ export async function scrapeAllSources(
 ): Promise<ScrapeResult[]> {
   const results: ScrapeResult[] = [];
 
-  const reports = recentReports && recentReports.length > 0 ? recentReports : await loadRecentReports();
+  // `!== undefined` is the discriminator: an explicitly passed empty array
+  // means "no history, do not auto-disable anything", which a truthiness/length
+  // check cannot tell apart from "caller passed nothing".
+  const reports = recentReports !== undefined ? recentReports : await loadRecentReports();
 
   const usesPuppeteer = sources.some((s) => s.enabled && s.jsRendered);
 
@@ -647,9 +702,17 @@ export async function scrapeAllSources(
         continue;
       }
       const result = await scrapeSource(source, signal);
+      if (result.cancelled) {
+        // Keep a cancelled source out of the results array entirely: with no
+        // errors it would otherwise be counted as a success, and if it ever
+        // carried one it would count toward the consecutive-failure streak
+        // that permanently auto-disables the source.
+        console.log(`[scraper] ${source.id} cancelled — excluded from results`);
+        break;
+      }
       results.push(result);
       onResult?.(result);
-      await delay(1000 + Math.random() * 2000);
+      await delay(1000 + Math.random() * 2000, signal);
     }
 
     return results;
@@ -659,5 +722,26 @@ export async function scrapeAllSources(
     if (usesPuppeteer) {
       await closeBrowser();
     }
+  }
+}
+
+export async function scrapeAllSources(
+  sources: ScraperSource[],
+  recentReports?: unknown[],
+  onResult?: (result: ScrapeResult) => void,
+  signal?: AbortSignal
+): Promise<ScrapeResult[]> {
+  if (activeScrape) {
+    console.warn("[scraper] a scrape is already running — refusing to start a concurrent run");
+    return [];
+  }
+
+  const run = runScrapeAllSources(sources, recentReports, onResult, signal);
+  activeScrape = run;
+  try {
+    return await run;
+  } finally {
+    // Only clear the slot if it is still ours: a later run may have taken over.
+    if (activeScrape === run) activeScrape = null;
   }
 }

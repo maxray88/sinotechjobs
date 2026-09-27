@@ -8,21 +8,38 @@ export const ADMIN_SECRET_STORAGE_KEY = "sinotechjobs:admin-secret";
 export function getAdminSecret(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    return window.localStorage.getItem(ADMIN_SECRET_STORAGE_KEY);
+    const stored = window.localStorage.getItem(ADMIN_SECRET_STORAGE_KEY);
+    if (stored === null) return null;
+    const trimmed = stored.trim();
+    if (!trimmed) return null;
+    // A hand-edited value can carry CR/LF or other control characters. Such a
+    // value makes `new Headers({ Authorization: ... })` throw a TypeError,
+    // which would fail every admin fetch at the construction site, so it is
+    // rejected here instead.
+    if (/[\u0000-\u001f\u007f]/.test(trimmed)) return null;
+    return trimmed;
   } catch {
     // Private mode / disabled storage — treat as "no secret".
     return null;
   }
 }
 
-export function setAdminSecret(secret: string): void {
+/**
+ * Persist the operator's secret. Returns false when nothing was written, so
+ * callers can surface a real error instead of retrying an unauthenticated
+ * fetch and silently re-prompting in a loop.
+ */
+export function setAdminSecret(secret: string): boolean {
   const trimmed = (secret ?? "").trim();
-  if (!trimmed) return;
-  if (typeof window === "undefined") return;
+  if (!trimmed) return false;
+  if (typeof window === "undefined") return false;
   try {
     window.localStorage.setItem(ADMIN_SECRET_STORAGE_KEY, trimmed);
+    return true;
   } catch {
     // Never throw from a storage write — a failed save must not break the UI.
+    // The false return is the signal that the secret was not persisted.
+    return false;
   }
 }
 

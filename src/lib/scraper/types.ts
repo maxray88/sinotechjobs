@@ -55,6 +55,11 @@ export interface ScrapeResult {
   errors: string[];
   duration: number;
   fetchMode?: FetchMode; // which fetch path was used: scraping-api | puppeteer | direct
+  // Set when the run was stopped by the caller's AbortSignal (cron timeout).
+  // Cancellation is not a source failure: such a result must never carry
+  // errors and must not be counted in successfulSources, otherwise
+  // shouldAutoDisable would permanently disable a perfectly healthy source.
+  cancelled?: boolean;
 }
 
 export interface ScrapeReport {

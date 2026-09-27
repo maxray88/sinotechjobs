@@ -233,6 +233,7 @@ export const translations = {
         placeholder: "CRON_SECRET",
         save: "Save",
         clear: "Clear",
+        storageError: "The secret could not be saved: browser storage is unavailable (e.g. private mode or storage blocked). Allow site storage and try again.",
       },
     },
     profile: {
@@ -544,6 +545,7 @@ export const translations = {
         placeholder: "CRON_SECRET",
         save: "保存",
         clear: "清除",
+        storageError: "密钥保存失败：浏览器存储不可用（例如无痕模式或已禁用网站存储）。请允许网站存储后重试。",
       },
     },
     profile: {
@@ -855,6 +857,7 @@ export const translations = {
         placeholder: "CRON_SECRET",
         save: "Speichern",
         clear: "Löschen",
+        storageError: "Der Schlüssel konnte nicht gespeichert werden: Der Browser-Speicher ist nicht verfügbar (z. B. privater Modus oder Speicher blockiert). Erlaube den Website-Speicher und versuche es erneut.",
       },
     },
     profile: {

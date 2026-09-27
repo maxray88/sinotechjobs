@@ -184,7 +184,13 @@ export default function AdminPage() {
   };
 
   const handleSaveSecret = () => {
-    setAdminSecret(secretInput);
+    // A failed storage write (private mode, storage blocked) must not degrade
+    // into a silent re-prompt loop: retrying an unauthenticated fetch can only
+    // ever produce another 401, so report the real cause instead.
+    if (!setAdminSecret(secretInput)) {
+      setError(t.admin.secret.storageError);
+      return;
+    }
     setSecretInput("");
     setError(null);
     // Retry immediately so the dashboard either populates or asks again.

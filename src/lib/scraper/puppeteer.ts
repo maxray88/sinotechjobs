@@ -66,8 +66,16 @@ export async function renderPage(
   try {
     if (signal?.aborted) return null;
 
+    // Launching Chromium is the slowest step of a cold start. An abort that
+    // lands during it is invisible to a listener registered afterwards (per
+    // spec, addEventListener on an already-aborted signal never fires), so the
+    // checks below must be made by hand or the page would be created and sent
+    // to goto() after the caller already gave up.
     const browser = await getBrowser();
+    if (signal?.aborted) return null;
+
     page = await browser.newPage();
+    if (signal?.aborted) return null;
 
     // Puppeteer has no AbortSignal support, so aborting is expressed as closing
     // the page: that rejects the in-flight goto/waitForSelector immediately

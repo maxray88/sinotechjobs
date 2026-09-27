@@ -3,6 +3,32 @@ import { getCurrentUser, getProfileRole } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/db/client";
 import { sendEmail, isValidRecipient } from "@/lib/email";
 
+// Ordered fallback fields, most authoritative first.
+const FALLBACK_EMAIL_FIELDS = ["contact_email", "email", "applicant_email"] as const;
+
+/**
+ * Pick the first candidate that is actually deliverable.
+ *
+ * `??` only falls through on null/undefined, so a present-but-invalid value
+ * (e.g. "n/a") used to short-circuit the chain and mask a valid address later
+ * in it. Each rejected candidate is logged, because a drop here is otherwise
+ * invisible: the posting is approved but the employer is never notified.
+ */
+function pickRecipientEmail(
+  posting: Record<string, unknown>,
+  postingId: unknown
+): string | null {
+  for (const field of FALLBACK_EMAIL_FIELDS) {
+    const value = posting[field];
+    if (typeof value !== "string" || value.trim() === "") continue;
+    if (isValidRecipient(value)) return value;
+    console.warn(
+      `[POST /api/admin/postings] ${field} for posting ${String(postingId)} is not a valid email address — trying the next candidate`
+    );
+  }
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   // Auth: require admin role
   const user = await getCurrentUser();
@@ -154,8 +180,7 @@ export async function POST(request: NextRequest) {
         } catch {}
         if (!recipientEmail) {
           const maybe = posting as Record<string, unknown>;
-          const fallback = maybe["contact_email"] ?? maybe["email"] ?? maybe["applicant_email"];
-          if (isValidRecipient(fallback)) recipientEmail = fallback;
+          recipientEmail = pickRecipientEmail(maybe, posting.id);
         }
         if (recipientEmail) {
           void sendEmail({
@@ -200,8 +225,7 @@ export async function POST(request: NextRequest) {
         } catch {}
         if (!recipientEmail) {
           const maybe = posting as Record<string, unknown>;
-          const fallback = maybe["contact_email"] ?? maybe["email"] ?? maybe["applicant_email"];
-          if (isValidRecipient(fallback)) recipientEmail = fallback;
+          recipientEmail = pickRecipientEmail(maybe, posting.id);
         }
         if (recipientEmail) {
           void sendEmail({
