@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useLang } from "@/components/LanguageProvider";
 import Link from "next/link";
+import { safeExternalUrl } from "@/lib/safe-url";
 
 type Posting = {
   id: number | string;
@@ -163,6 +164,10 @@ export default function EmployerDashboardClient({ items }: { items: Posting[] })
             const isPaid = item.payment_status === "paid";
             const showPay = isPaidTier && !isPaid;
             const showPaidBadge = isPaidTier && isPaid;
+            // Stored value, not a request field: rows predate the schema fix
+            // and can be written by hand in the Supabase dashboard, so the
+            // render site re-checks the scheme instead of trusting the column.
+            const applyUrl = safeExternalUrl(item.application_url);
 
             return (
               <div key={String(item.id)} className="card" style={{ padding: "1.25rem" }}>
@@ -268,9 +273,9 @@ export default function EmployerDashboardClient({ items }: { items: Posting[] })
                     {submittedLabel}: {formatted}
                   </span>
 
-                  {item.application_url && (
+                  {applyUrl ? (
                     <a
-                      href={item.application_url}
+                      href={applyUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{
@@ -279,8 +284,19 @@ export default function EmployerDashboardClient({ items }: { items: Posting[] })
                         fontSize: "0.8125rem",
                       }}
                     >
-                      {item.application_url}
+                      {applyUrl}
                     </a>
+                  ) : (
+                    <span
+                      style={{
+                        color: "var(--muted-foreground)",
+                        wordBreak: "break-all",
+                        fontSize: "0.8125rem",
+                        textDecoration: "line-through",
+                      }}
+                    >
+                      {item.application_url || t.jobs.applyUnavailable}
+                    </span>
                   )}
 
                   {showPay && (

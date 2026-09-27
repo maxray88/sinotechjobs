@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useLang } from "@/components/LanguageProvider";
+import { safeExternalUrl } from "@/lib/safe-url";
 
 type Posting = {
   id: number;
@@ -192,6 +193,10 @@ export default function ApprovalsClient({ pending: initialPending, recent }: Pro
               const isRejecting = rejectId === item.id;
               const tier = tierLabel(item.tier, tierDict);
               const tierIsFeatured = (item.tier ?? "free") !== "free";
+              // Same defence-in-depth as the employer dashboard and
+              // JobDetailClient: this column is attacker-influenced, rows
+              // predate the schema fix, and the value is an href sink.
+              const applyUrl = safeExternalUrl(item.application_url);
 
               return (
                 <div
@@ -324,9 +329,9 @@ export default function ApprovalsClient({ pending: initialPending, recent }: Pro
                       <span style={{ fontWeight: 600 }}>Requirements:</span> {item.requirements}
                     </p>
                   )}
-                  {item.application_url && (
+                  {applyUrl ? (
                     <a
-                      href={item.application_url}
+                      href={applyUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{
@@ -337,8 +342,32 @@ export default function ApprovalsClient({ pending: initialPending, recent }: Pro
                         marginBottom: "0.875rem",
                       }}
                     >
-                      {item.application_url}
+                      {applyUrl}
                     </a>
+                  ) : item.application_url ? (
+                    <span
+                      style={{
+                        display: "inline-block",
+                        fontSize: "0.8125rem",
+                        color: "var(--muted-foreground)",
+                        wordBreak: "break-all",
+                        marginBottom: "0.875rem",
+                        textDecoration: "line-through",
+                      }}
+                    >
+                      {item.application_url}
+                    </span>
+                  ) : (
+                    <span
+                      style={{
+                        display: "inline-block",
+                        fontSize: "0.8125rem",
+                        color: "var(--muted-foreground)",
+                        marginBottom: "0.875rem",
+                      }}
+                    >
+                      {t.jobs.applyUnavailable}
+                    </span>
                   )}
 
                   <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "flex-start" }}>
